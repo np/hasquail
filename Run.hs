@@ -1,4 +1,6 @@
 import System.Environment
+import System.Exit
+import System.IO
 import Parquail
 import TranslateQuail
 import Printquail
@@ -10,7 +12,7 @@ main = do
   fp:_ <- getArgs
   s <- readFile fp
   case pProgr $ myLexer s of
-    Bad s -> putStrLn s
+    Bad err -> hPutStrLn stderr err >> exitWith (ExitFailure 1)
     Ok t -> do
         putStrLn $ printTree t
-        print . runProgram . transProgr $ t
+        putStrLn . showProbTree . runProgram . transProgr $ t
