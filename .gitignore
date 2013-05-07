@@ -1,0 +1,16 @@
+*.swp
+*~
+*.bak
+
+Absquail.hs
+Docquail.tex
+Docquail.txt
+ErrM.hs
+Lexer.hs
+Lexquail.hs
+Lexquail.x
+Parquail.hs
+Parquail.y
+Printquail.hs
+Skelquail.hs
+Testquail.hs
