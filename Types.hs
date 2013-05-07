@@ -4,8 +4,13 @@ module Types where
 import Prelude hiding (LT, GT, EQ)
 import qualified Data.Map as Map
 import Data.Map (Map)
+import qualified Data.Set as Set
+import Data.Set (Set)
+import Data.List
 import Data.Maybe
 import Control.Monad.State
+import Numeric
+--import Data.Functor.Identity
 
 type Endo a = a -> a
 
@@ -152,8 +157,9 @@ evalCond env penv (PrivComp rel2 (v, es) e) =
 
 data Stmt = While Expr [Stmt]
           | If Expr [Stmt] [Stmt]
-       -- TODO elsif
+       -- TODO elif: | If [(Expr, [Stmt])] [Stmt]
           | Assign (Var, [Expr]) Expr
+       -- | Random (Var, [Expr]) (Interval Expr)
           | Return
 
 type Probability = Rational
@@ -170,15 +176,50 @@ class MonadProb m => Exec m where
   addEnv :: (Var, [Integer]) -> Integer -> m ()
   -- askIsPrivate :: m (Var -> Bool)          
 
+data BinTree n a where
+  Fork :: n -> BinTree n a -> BinTree n a -> BinTree n a
+  Leaf :: a -> BinTree n a
+  deriving (Show)
+
+type ProbTree = BinTree Probability
+
+instance Monad (BinTree n) where
+  return = Leaf
+  Fork p l r >>= k = Fork p (l >>= k) (r >>= k)
+  Leaf x     >>= k = k x
+
+mapBinTree :: (n -> n') -> (a -> a') -> BinTree n a -> BinTree n' a'
+mapBinTree f g (Fork x l r) = Fork (f x) (mapBinTree f g l) (mapBinTree f g r)
+mapBinTree _ g (Leaf x) = Leaf (g x)
+
+instance Functor (BinTree n) where
+  fmap = liftM
+
+{-
+instance Applicative (BinTree n) where
+  pure = return
+  (<*>) = ap
+-}
+
+instance n ~ Probability => MonadProb (BinTree n) where
+  withProb = Fork
+
 data ProbT (m :: * -> *) a where
     WithProb  :: Probability -> ProbT m a -> ProbT m a -> ProbT m a
     Bind      :: m b -> (b -> ProbT m a) -> ProbT m a
     Ret       :: a -> ProbT m a
 
-runProbT :: Monad m => ProbT m a -> m a
-runProbT (WithProb _ _ _) = error "runProbT: withprob TODO"
-runProbT (Bind m k) = m >>= runProbT . k
-runProbT (Ret x) = return x
+runProbT :: (MonadState s m, MonadProb n) => (s -> a -> b) -> ProbT m a -> m (n b)
+runProbT f (WithProb p ifTrue ifFalse) =
+  do s <- get
+     ifTrue' <- runProbT f ifTrue
+     put s
+     ifFalse' <- runProbT f ifFalse
+     put s
+     return (withProb p ifTrue' ifFalse')
+runProbT f (Bind m k) = m >>= runProbT f . k
+runProbT f (Ret x) = do s <- get
+                        return (return (f s x))
 
 instance MonadTrans ProbT where
     lift m = Bind m Ret
@@ -188,6 +229,9 @@ instance Monad m => Monad (ProbT m) where
   WithProb p l r >>= k = WithProb p (l >>= k) (r >>= k)
   Bind m k'      >>= k = Bind m (\x -> k' x >>= k)
   Ret x          >>= k = k x
+
+instance Monad m => Functor (ProbT m) where
+  fmap = liftM
 
 instance Monad m => MonadProb (ProbT m) where
   withProb p left right = WithProb p left right
@@ -200,8 +244,8 @@ newtype M a = M { runM :: ProbT (State PrgState) a }
     deriving (Monad, MonadProb, MonadState PrgState)
 
 instance Exec M where
-  getEnv = gets (\s v xs -> fromMaybe (error "getEnv") (Map.lookup (v, xs) (publicState s)))
-  getPrivEnv = gets (\s v xs -> fromMaybe (error "getPrivEnv") (Map.lookup (v, xs) (privateState s)))
+  getEnv = gets (\s v xs -> fromMaybe (error ("getEnv: " ++ show (v,xs))) (Map.lookup (v, xs) (publicState s)))
+  getPrivEnv = gets (\s v _UNUSED_xs -> fromMaybe (error "getPrivEnv") (Map.lookup v (privateState s)))
   addEnv vxs i = modify (\s -> s { publicState = Map.insert vxs i (publicState s) })
   -- askIsPrivate = 
 
@@ -225,7 +269,7 @@ execStmt isPrivate (If condExp ifTrue ifFalse) =
          withProb (probIf iTrue iFalse)
                   (execStmts isPrivate ifTrue)
                   (execStmts isPrivate ifFalse)
-execStmt isPrivate (Assign (v, es) e) =
+execStmt _ (Assign (v, es) e) =
     do env <- getEnv
        addEnv (v,map (evalExpr env) es) (evalExpr env e)
 execStmt isPrivate loop@(While cond body) = execStmt isPrivate (If cond (body ++ [loop]) [])
@@ -240,12 +284,13 @@ data Mode = Const
           | Secret
           | Private
 
-isPublic :: Mode -> Bool
-isPublic Const = True
-isPublic Observable = True
-isPublic Public = True
-isPublic Secret = False
-isPublic Private = False
+isPublicMode, isPrivateMode :: Mode -> Bool
+isPublicMode Const = True
+isPublicMode Observable = True
+isPublicMode Public = True
+isPublicMode Secret = False
+isPublicMode Private = False
+isPrivateMode = not . isPublicMode
 
 data Initializer =
    NoInit
@@ -258,8 +303,8 @@ data Decl = Decl Mode Type Var Initializer -- e.g. secret x : int(3)
 
 execDecl :: Exec m => IsPrivate -> Decl -> m ()
 execDecl _         (Decl _ _ _ NoInit)      = return ()
---execDecl isPrivate (Decl _ _ v (ExpInit e)) = execStmt isPrivate (Assign v e)
-execDecl isPrivate (Decl _m _ _v _rs)       = error "execDecl TODO"
+execDecl isPrivate (Decl _ _ v (ExpInit e)) = execStmt isPrivate (Assign (v,[]) e)
+execDecl _isPrivate (Decl _m _ _v _rs)       = error "execDecl TODO"
 execDecl isPrivate (Code s)                 = execStmt isPrivate s
 
 type Program = [Decl]
@@ -267,14 +312,48 @@ type Program = [Decl]
 execProgram :: Exec m => IsPrivate -> Program -> m ()
 execProgram isPrivate = mapM_ (execDecl isPrivate)
 
-runProgram :: Program -> PrgState
-runProgram prg = flip execState initialState
-               . runProbT
+privVars :: Program -> Set Var
+privVars ds = Set.fromList [v | Decl m _ v NoInit <- ds, isPrivateMode m]
+
+intervalOfType :: Type -> Interval Integer
+intervalOfType (TyInt bits) = [Range 0 (2^bits-1)]
+intervalOfType TyArray{} = error "intervalOfType: Array"
+
+initPrivEnv :: Program -> Map Var (Interval Integer)
+initPrivEnv ds = Map.fromList [(v,intervalOfType ty) | Decl m ty v NoInit <- ds, isPrivateMode m]
+
+showProbTree :: ProbTree PrgState -> String
+showProbTree = show . mapBinTree (($"") . showDouble . fromRational) showPrgState
+  where showDouble :: Double -> ShowS
+        showDouble = showFFloat Nothing
+
+showPrgState :: PrgState -> String
+showPrgState (PrgState pub priv) =
+   "Pub:"  ++ intercalate "," (map showPub $ Map.toList pub) ++
+  ",Priv:" ++ intercalate "," (map showPriv $ Map.toList priv)
+
+showPub :: ((Var,[Integer]),Integer) -> String
+showPub ((v,[]),i) = v ++ "=" ++ show i
+showPub ((v,xs),i) = v ++ show xs ++ "=" ++ show i
+
+showPriv :: (Var,Interval Integer) -> String
+showPriv (v,i) = v ++ "=" ++ showInterval i
+
+showInterval :: Interval Integer -> String
+showInterval = concatMap showRange
+
+showRange :: Range Integer -> String
+showRange (Range i j) = "[" ++ show i ++ ".." ++ show j ++ "]"
+
+runProgram :: Program -> ProbTree PrgState
+runProgram prg = flip evalState initialState
+               . runProbT const
                . runM
                . execProgram isPrivate
                $ prg
-  where isPrivate _ = False -- TODO
-        initialState = PrgState Map.empty Map.empty
+  where isPrivate = (`Set.member` privVars prg)
+        privEnv = initPrivEnv prg
+        initialState = PrgState Map.empty privEnv
 
 -- Check ranges in declarations
 type TypingEnv = Map Var (Mode , Type)
@@ -284,7 +363,7 @@ type StateIdent = Integer
 -- program counter
                   -- , transitions  :: [Transition]
 data PrgState = PrgState { publicState  :: Map (Var,[Integer]) Integer
-                         , privateState :: Map (Var,[Integer]) (Interval Integer)
+                         , privateState :: Map Var (Interval Integer)
                          }
   deriving (Show)
 
@@ -303,7 +382,7 @@ translateProgram = undefined
 {-
 update :: State -> Decl -> State
 update s (Decl m ty v interval)
-    | isPublic m = s { publicState = Map.insert v ( (publicState s) }
+    | isPublicMode m = s { publicState = Map.insert v ( (publicState s) }
     | otherwise  = ?
 update s (Code stm) = ?
 
