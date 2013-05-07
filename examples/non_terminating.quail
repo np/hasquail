@@ -1,0 +1,16 @@
+// a variable to loop on
+observable int2 l:=0;
+
+// this is the secret
+secret int1 h;
+
+// if the secret is 0 then loop forever
+if (h==0) then
+  while (l==0) do
+  assign l:=0;
+  od
+fi
+
+
+// terminate
+return;

@@ -1,0 +1,58 @@
+// the leakage for this protocol must be the same as the leakage for sum.quail for the same values of the constants.
+
+// S is the number of students
+const S:=2;
+
+// G is the number of grades (from 0 to G-1)
+const G:=2;
+
+// n is the number of possible random numbers generated
+public int32 n;
+
+
+// this is the sum that will be printed
+observable int32 output;
+
+// this is an internal counter for the sum
+public int32 sum:=0;
+
+// these are the random numbers; each one is shared between two students
+public array [S] of int32 numbers;
+
+// these are the public announcements of each student
+observable array [S] of int32 announcements;
+
+// there are S secret votes, each one with G possible values:
+secret array [S] of int32 h := [0,G-1];
+
+// these are just counters
+public int32 i:=0;
+public int32 j:=0;
+
+// calculating n
+assign n:=((G-1)*S)+1;
+
+// generate the random numbers
+for (num in numbers) do
+  random num:=random(0,n-1);
+od
+
+// producing the declarations according to the secret value
+while (i<S) do
+  assign j:=0;
+  while (j<G) do
+    if (h[i]==j) then
+      assign announcements[i]:=(j+numbers[i]-numbers[(i+1)%S])%n;
+    fi
+    assign j:=j+1;
+  od
+  assign i:=i+1;
+od
+
+//computing the sum, producing the output and terminating
+for (a in announcements) do
+  assign sum := sum+a;
+od
+assign output := sum%n;
+
+return;

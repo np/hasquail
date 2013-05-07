@@ -1,0 +1,38 @@
+// S is the number of agents
+const S:=4;
+
+// G is the number of votes (from 0 to G-1)
+const G:=5;
+
+
+
+// this is the sum that will be printed
+observable int32 output;
+
+// this is an internal counter for the sum
+public int32 sum:=0;
+
+// there are S secrets, each one with G possible values:
+secret array [S] of int32 h := [0,G-1];
+
+// these are just counters
+public int32 i:=0;
+public int32 j:=0;
+
+
+// computing the sum of the secrets
+while (i<S) do
+  assign j:=0;
+  while (j<G) do
+    if (h[i]==j) then
+      assign sum := sum + j;
+    fi
+    assign j:=j+1;
+  od
+  assign i:=i+1;
+od
+
+//producing the output and terminating
+assign output := sum;
+
+return;

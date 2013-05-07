@@ -1,0 +1,24 @@
+// the output is l = r XOR h
+// if (h=0 and r=0) or (h=1 and r=1) then l=0
+// if (h=1 and r=0) or (h=0 and r=1) then l=1
+//
+
+observable int1 l; // this bit represents the output
+
+public int1 r; // this bit is randomly generated
+
+// this bit is the secret
+secret int1 h;
+
+// randomize the random bit with a given probability
+random r:=randombit(0.8);
+
+// calculate the XOR
+if (h==r) then
+assign l:=0;
+else
+assign l:=1;
+fi
+
+// terminate
+return;

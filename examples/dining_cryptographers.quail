@@ -1,0 +1,52 @@
+// N is the number of cryptographers at the table
+const N:=6;
+
+// this bit represents the output
+observable int1 output;
+
+// these bits represent the coin tosses
+public array [N] of int1 coin;
+
+// these are the observable coins
+observable array[2] of int1 obscoin;
+
+// this is just a counter
+public int32 i:=0;
+
+// these bits represent the bits declared by the three cryptographers
+observable array [N] of int1 decl;
+
+// the secret has N+1 possible values:
+// 0 if the Master paid
+// 1 if Cryptographer A paid
+// 2 if Cryptographer B paid
+// 3 if Cryptographer C paid
+// ... and so on
+secret int32 h := [0,N];
+
+// tossing the coins
+for (c in coin) do
+  random c:=randombit(0.7);
+od
+
+// if the attacker is one of the cryptographers, he can observe two of the coins.
+// To encode an external attacker comment the next two lines.
+assign obscoin[0]:=coin[0];
+assign obscoin[1]:=coin[1];
+
+// producing the declarations according to the secret value
+while (i<N) do
+  assign decl[i]:=coin[i]^coin[(i+1)%N];
+  if (h==i+1) then
+    assign decl[i]:=!decl[i];
+  fi
+  assign i:=i+1;
+od
+
+//producing the output bit and terminating
+for (d in decl) do
+  assign output := output^d;
+od
+
+
+return;

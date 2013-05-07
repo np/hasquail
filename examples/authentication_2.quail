@@ -1,0 +1,18 @@
+// this bit is observable by the user; it is 0 for REJECT and 1 for ACCEPT
+observable int1 o;
+
+// this represents the password inserted by the user
+public int2 input:=2;
+
+// this is the secret
+secret int2 password;
+
+// increase the observable variable until it matches the secret
+if (password==input) then
+  assign o:=1;
+else
+  assign o:=0;
+fi
+
+// terminate
+return;

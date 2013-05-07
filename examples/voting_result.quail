@@ -1,0 +1,43 @@
+// N is the number of voters
+const N:=4;
+
+// the output is 0 if there is a tie, 1 if candidate A wins and 2 if candidate B wins
+observable int2 output:=0;
+
+// these bits represent the preferences of each voter
+secret array [N] of int1 vote;
+
+// these bits represent the votes received by the voting machine
+public array [N] of int1 decl;
+
+// this is the number of votes for candidate B
+public int32 count:=0;
+
+// this is just a counter
+public int32 i:=0;
+
+// voting
+while (i<N) do
+  if (vote[i]==0) then
+    assign decl[i]:=0;
+  else
+    assign decl[i]:=1;
+  fi
+  assign i:=i+1;
+od
+
+// count the number of votes for one of the candidates 
+for (d in decl) do
+  assign count:=count+d;
+od
+
+// declare the winner
+if (count == N/2) then
+  assign output:=0;
+elif (count < N/2) then
+  assign output :=1;
+else 
+  assign output :=2;
+fi
+
+return;

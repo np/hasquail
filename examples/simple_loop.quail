@@ -1,0 +1,13 @@
+// this variable is observable by the user
+observable int2 l:=0;
+
+// this is the secret
+secret int2 h;
+
+// increase the observable variable until it matches the secret
+while (h!=l) do
+  assign l:=l+1;
+od
+
+// terminate
+return;

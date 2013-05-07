@@ -1,0 +1,31 @@
+// N is the number of voters
+const N:=6;
+
+// the output is the number of votes for one of the two candidates
+observable int1 output:=0;
+
+// these bits represent the preferences of each voter
+secret array [N] of int1 vote;
+
+// these bits represent the votes received by the voting machine
+public array [N] of int1 decl;
+
+// this is just a counter
+public int32 i:=0;
+
+// voting
+while (i<N) do
+  if (vote[i]==0) then
+    assign decl[i]:=0;
+  else
+    assign decl[i]:=1;
+  fi
+  assign i:=i+1;
+od
+
+// count the number of votes for one of the candidates 
+for (d in decl) do
+  assign output:=output+d;
+od
+
+return;

@@ -1,0 +1,20 @@
+observable int3 output;
+secret int3 h;
+if (h==0) then
+  assign output:=0;
+elif (h==1) then
+  assign output:=1;
+elif (h==2) then
+  assign output:=2;
+elif (h==3) then
+  assign output:=3;
+elif (h==4) then
+  assign output:=4;
+elif (h==5) then
+  assign output:=5;
+elif (h==6) then
+  assign output:=6;
+else
+  assign output:=7;
+fi
+return;
