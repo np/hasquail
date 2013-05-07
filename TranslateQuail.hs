@@ -30,11 +30,11 @@ transDec x = case x of
   Code stm -> T.Code (transStm stm)
 
 
-transInitializer :: Initializer -> T.Interval T.Expr
+transInitializer :: Initializer -> T.Initializer
 transInitializer x = case x of
-  NoInit  -> []
-  ExpInit exp  -> T.singletonInterval (transExp exp)
-  IntervalInit ranges  -> map transRange ranges
+  NoInit  -> T.NoInit
+  ExpInit exp  -> T.ExpInit (transExp exp)
+  IntervalInit ranges  -> T.IntervalInit $ map transRange ranges
 
 transRange :: Range -> T.Range T.Expr
 transRange x = case x of

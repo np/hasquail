@@ -247,14 +247,20 @@ isPublic Public = True
 isPublic Secret = False
 isPublic Private = False
 
-data Decl = Decl Mode Type Var (Interval Expr) -- e.g. secret x : int(3)
-                                               -- const x : int(3) = 2
+data Initializer =
+   NoInit
+ | ExpInit Expr
+ | IntervalInit [Range Expr]
+
+data Decl = Decl Mode Type Var Initializer -- e.g. secret x : int(3)
+                                           -- const x : int(3) = 2
           | Code Stmt
 
 execDecl :: Exec m => IsPrivate -> Decl -> m ()
-execDecl _         (Decl _ _ _v [])   = {-addEnv (v, TODO)-} return ()
-execDecl _         (Decl _m _ _v _rs) = error "execDecl TODO"
-execDecl isPrivate (Code s)           = execStmt isPrivate s
+execDecl _         (Decl _ _ _ NoInit)      = return ()
+--execDecl isPrivate (Decl _ _ v (ExpInit e)) = execStmt isPrivate (Assign v e)
+execDecl isPrivate (Decl _m _ _v _rs)       = error "execDecl TODO"
+execDecl isPrivate (Code s)                 = execStmt isPrivate s
 
 type Program = [Decl]
 

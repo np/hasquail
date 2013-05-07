@@ -37,8 +37,8 @@ Private.    Mode ::= "private" ;
 Idx. Index ::= "[" Exp "]" ;
 
 SAssign. Stm ::= "assign" Ident [Index] ":=" Exp ";";
-SIf.     Stm ::= "if" Exp "then" [Stm] "else" [Stm] "fi" ";";
-SWhile.  Stm ::= "while" Exp "do" [Stm] "od" ";";
+SIf.     Stm ::= "if" Exp "then" [Stm] "else" [Stm] "fi";
+SWhile.  Stm ::= "while" Exp "do" [Stm] "od";
 SReturn. Stm ::= "return" ";";
 -- _. Stm ::= Stm ";" ;
 
