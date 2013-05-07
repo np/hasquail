@@ -1,0 +1,73 @@
+comment "#" ;
+comment "//" ;
+comment "/*" "*/" ;
+
+Program. Progr ::= [Dec] ;
+
+[].  [Dec] ::= ;
+(:). [Dec] ::= Dec [Dec] ;
+
+[].  [Stm] ::= ;
+(:). [Stm] ::= Stm [Stm] ;
+
+Decl. Dec ::= Mode Typ Ident Initializer ";" ;
+Code. Dec ::= Stm ;
+
+NoInit.       Initializer ::= ;
+ExpInit.      Initializer ::= ":=" Exp ;
+IntervalInit. Initializer ::= ":=" [Range] ;
+
+[].  [Range] ::= ;
+(:). [Range] ::= Range [Range] ;
+
+Rng. Range ::= "[" Exp "," Exp "]" ;
+
+Const.      Mode ::= "const" ;
+Observable. Mode ::= "observable" ;
+Public.     Mode ::= "public" ;
+Secret.     Mode ::= "secret" ;
+Private.    Mode ::= "private" ;
+
+-- (:[]). [Ident] ::= Ident ;
+-- (:). [Ident] ::= Ident "," [Ident] ;
+
+[].  [Index] ::= ;
+(:). [Index] ::= Index [Index] ;
+
+Idx. Index ::= "[" Exp "]" ;
+
+SAssign. Stm ::= "assign" Ident [Index] ":=" Exp ";";
+SIf.     Stm ::= "if" Exp "then" [Stm] "else" [Stm] "fi" ";";
+SWhile.  Stm ::= "while" Exp "do" [Stm] "od" ";";
+SReturn. Stm ::= "return" ";";
+-- _. Stm ::= Stm ";" ;
+
+EOpA. Exp ::= Exp0 Op Exp0 ;
+EOpB. Exp0 ::= Exp1 Op0 Exp1 ;
+EOpC. Exp1 ::= Exp1 Op1 Exp2 ;
+EOpD. Exp2 ::= Exp2 Op2 Exp3 ;
+EOpE. Exp ::= Exp1 Op Exp1 ;
+
+EVar.     Exp3 ::= Ident [Index] ;
+EInteger. Exp3 ::= Integer ;
+
+_. Exp ::= Exp0 ;
+_. Exp0 ::= Exp1 ;
+_. Exp1 ::= Exp2 ;
+_. Exp2 ::= Exp3 ;
+_. Exp3 ::= "(" Exp ")" ;
+
+OPlus.  Op1 ::= "+" ;
+OTimes. Op2 ::= "*" ;
+OMinus. Op1 ::= "-" ;
+OLt. Op0 ::= "<" ;
+OLe. Op0 ::= "<=" ;
+OGt. Op0 ::= ">" ;
+OGe. Op0 ::= ">=" ;
+OEq. Op0 ::= "==" ;
+ONe. Op0 ::= "!=" ;
+OAnd. Op ::= "&&" ;
+OOr.  Op ::= "||" ;
+
+TInt.   Typ ::= "int" Integer ;
+TArray. Typ ::= "array" "[" Exp "]" "of" Typ ;
