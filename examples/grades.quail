@@ -4,7 +4,7 @@
 const S:=2;
 
 // G is the number of grades (from 0 to G-1)
-const G:=2;
+const G:=5;
 
 // n is the number of possible random numbers generated
 public int32 n;

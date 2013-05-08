@@ -1,0 +1,47 @@
+// the leakage is supposed to be $$\sum_{k_1+k_2+...+k_c=n} \frac{1}{c^n}\binom{n}{k_1+k_2+...+k_c}\left(\log_2 c^n -\log_2\binom{n}{k_1+k_2+...+k_c}\right)$$
+
+// N is the number of voters
+const N:=5;
+
+// C is the number of candidates
+const C:=5;
+
+// the result is the number of votes of each candidate
+observable array [C] of int32 result := 0;
+
+// these bits represent the preferences of each voter
+secret array [N] of int32 vote:=[0,C-1];
+
+// these bits represent the votes received by the voting machine
+public array [N] of int32 decl;
+
+// this is just a counter
+public int32 i:=0;
+public int32 j:=0;
+// voting
+while (i<N) do
+  while (j<C) do
+    if (vote[i]==j) then
+      assign decl[i]:=j;
+    fi  
+    assign j:=j+1;
+  od
+  assign j:=0;
+  assign i:=i+1;
+od
+
+// count the number of votes for one of the candidates 
+assign i:=0;
+assign j:=0;
+while (i<N) do
+  while (j<C) do
+    if (decl[i]==j) then
+      assign result[j]:=result[j]+1;
+    fi
+    assign j:=j+1;
+  od
+  assign j:=0;
+  assign i:=i+1;
+od
+
+return;

@@ -1,0 +1,85 @@
+// the leakage is supposed to be
+
+// N is the number of voters
+const N:=4;
+
+// C is the number of candidates
+const C:=2;
+
+// the result is the number of votes of each candidate
+observable array [C] of int32 result := 0;
+
+// these bits represent the preferences of each voter, from 0 to C!-1
+secret array [N] of int32 vote:=[0,1];
+
+// these bits represent the votes received by the voting machine
+public array [N] of int32 decl;
+public array [N] of array [C] of int32 prefs;
+
+public array [C] of int32 temparray;
+public int32 pos;
+// this is just a counter
+
+public int32 voter:=0;
+public int32 candidate:=0;
+public int32 k:=0;
+public int32 y:=0;
+
+// voting
+while (voter<N) do
+  while (candidate<C) do
+    if (vote[voter]==candidate) then
+      assign decl[voter]:=candidate;
+    fi  
+    assign candidate:=candidate+1;
+  od
+  assign candidate:=0;
+  assign voter:=voter+1;
+od
+
+// transform the secret of each voter into the order of the preferences
+assign voter:=0;
+while (voter<N) do 
+
+   // build the initial array
+  assign candidate:=0;
+  while (candidate<C) do
+    assign temparray[candidate]:=candidate;
+    assign candidate:=candidate+1;
+  od
+  
+  assign k:=C;
+  // find a position
+  while (k>0) do
+    assign pos := decl[voter]%k;
+    assign candidate:=C-k;
+    // update the vote of the candidate
+    assign prefs[voter][candidate]:=temparray[pos];
+
+    // remove the element from the array
+    assign y:=pos;
+    while (y<C-1) do
+      assign temparray[y]:=temparray[y+1];
+      assign y:=y+1;
+    od
+    
+    // update the vote of the voter
+    assign decl[voter]:=decl[voter]/k;
+    
+    // decrease the counter
+    assign k:=k-1;
+  od
+  assign voter:=voter+1;
+od
+// calculate the results
+assign candidate:=0;
+while (candidate<C) do
+  assign voter:=0;
+  while (voter<N) do
+    assign result[candidate]:=result[candidate]+prefs[voter][candidate];
+    assign voter:=voter+1;
+  od
+  assign candidate := candidate+1;
+od
+
+return;

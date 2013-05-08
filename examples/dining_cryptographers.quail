@@ -1,5 +1,5 @@
 // N is the number of cryptographers at the table
-const N:=6;
+const N:=10;
 
 // this bit represents the output
 observable int1 output := 0;
