@@ -2,10 +2,10 @@
 observable int1 o;
 
 // this represents the password inserted by the user
-public int500 input:=123456789;
+public int 500 input:=123456789;
 
 // this is the secret
-secret int500 password;
+secret int 500 password;
 
 // increase the observable variable until it matches the secret
 if (password==input) then
