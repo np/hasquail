@@ -1,6 +1,9 @@
 *.swp
 *~
 *.bak
+*.hi
+*.o
+Run
 
 Absquail.hs
 Docquail.tex

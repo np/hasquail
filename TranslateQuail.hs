@@ -27,13 +27,14 @@ transProgr x = case x of
 transDec :: Dec -> T.Decl
 transDec x = case x of
   Decl mode typ id initializer  -> T.Decl (transMode mode) (transTyp typ) (transIdent id) (transInitializer initializer)
+  Cnst id n  -> T.Cnst (transIdent id) n
   Code stm -> T.Code (transStm stm)
 
 
-transInitializer :: Initializer -> T.Initializer
+transInitializer :: Initializer -> T.Initializer T.Expr
 transInitializer x = case x of
   NoInit  -> T.NoInit
-  ExpInit exp  -> T.ExpInit (transExp exp)
+  ExpInit exp  -> T.Init (transExp exp)
   IntervalInit ranges  -> T.IntervalInit $ map transRange ranges
 
 transRange :: Range -> T.Range T.Expr
@@ -43,7 +44,7 @@ transRange x = case x of
 
 transMode :: Mode -> T.Mode
 transMode x = case x of
-  Const  -> T.Const
+  -- Const  -> T.Const
   Observable  -> T.Observable
   Public  -> T.Public
   Secret  -> T.Secret
@@ -58,9 +59,25 @@ transIndex x = case x of
 transStm :: Stm -> T.Stmt
 transStm x = case x of
   SAssign id ixs exp  -> T.Assign (transIdent id, map transIndex ixs) (transExp exp)
-  SIf exp stm1 stm2  -> T.If (transExp exp) (map transStm stm1) (map transStm stm2)
+  SRandom id ixs randexp  -> T.Random (transIdent id, map transIndex ixs) (transRandExp randexp)
+  SIf exp stms elifs  -> T.If (transExp exp) (map transStm stms) (transElIfs elifs)
   SWhile exp stm -> T.While (transExp exp) (map transStm stm)
+  SFor id1 id2 stms3  -> T.For (transIdent id1) (transIdent id2) (map transStm stms3)
   SReturn  -> T.Return
+
+
+transRandExp :: RandExp -> T.RandExp
+transRandExp x = case x of
+  RandomBit d  -> T.RandomBit d
+  RandomInt exp1 exp2  -> T.RandomInt (T.Range (transExp exp1) (transExp exp2))
+
+
+transElIfs :: ElIfs -> [T.Stmt]
+transElIfs x = case x of
+  NoElse -> []
+  Else stms  -> map transStm stms
+  ElIf exp stms elifs -> [T.If (transExp exp) (map transStm stms) (transElIfs elifs)]
+
 
 
 transExp :: Exp -> T.Expr
@@ -71,6 +88,8 @@ transExp x = case x of
   EOpD exp1 op2 exp3  -> app2 op2 exp1 exp3
   EOpE exp1 op2 exp3  -> app2 op2 exp1 exp3
   EVar id ixs  -> T.Var (transIdent id) (map transIndex ixs)
+  EOp ONot exp  -> T.Op T.Not (transExp exp)
+  EFac exp  -> T.Op T.Fac (transExp exp)
   EInteger n  -> T.Lit n
  where app2 op2 e1 e2 = T.Op2 (transOp2 op2)
                               (transExp e1) (transExp e2)
@@ -79,7 +98,10 @@ transOp2 :: Op -> T.Op2
 transOp2 x = case x of
   OPlus  -> T.Add
   OTimes  -> T.Mul
+  ODiv  -> T.Div
   OMinus  -> T.Sub
+  OXor -> T.Xor
+  OMod -> T.Mod
   OLt  -> T.Rel2 T.LT
   OLe  -> T.Rel2 T.LE
   OGt  -> T.Rel2 T.GT
@@ -89,8 +111,15 @@ transOp2 x = case x of
   OAnd  -> T.And
   OOr   -> T.Or
 
-transTyp :: Typ -> T.Type
+transTyp :: Typ -> T.Type T.Expr
 transTyp x = case x of
+  TInt1   -> T.TyInt 1
+  TInt2   -> T.TyInt 2
+  TInt4   -> T.TyInt 4
+  TInt8   -> T.TyInt 8
+  TInt16  -> T.TyInt 16
+  TInt32  -> T.TyInt 32
+  TInt64  -> T.TyInt 64
   TInt n  -> T.TyInt (fromInteger n) -- no bound check
   TArray exp typ  -> T.TyArray (transExp exp) (transTyp typ)
 

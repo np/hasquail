@@ -11,6 +11,7 @@ Program. Progr ::= [Dec] ;
 (:). [Stm] ::= Stm [Stm] ;
 
 Decl. Dec ::= Mode Typ Ident Initializer ";" ;
+Cnst. Dec ::= "const" Ident ":=" Integer ";" ;
 Code. Dec ::= Stm ;
 
 NoInit.       Initializer ::= ;
@@ -22,7 +23,7 @@ IntervalInit. Initializer ::= ":=" [Range] ;
 
 Rng. Range ::= "[" Exp "," Exp "]" ;
 
-Const.      Mode ::= "const" ;
+-- Const.      Mode ::= "const" ;
 Observable. Mode ::= "observable" ;
 Public.     Mode ::= "public" ;
 Secret.     Mode ::= "secret" ;
@@ -37,10 +38,19 @@ Private.    Mode ::= "private" ;
 Idx. Index ::= "[" Exp "]" ;
 
 SAssign. Stm ::= "assign" Ident [Index] ":=" Exp ";";
-SIf.     Stm ::= "if" Exp "then" [Stm] "else" [Stm] "fi";
+SRandom. Stm ::= "random" Ident [Index] ":=" RandExp ";";
+SIf.     Stm ::= "if" Exp "then" [Stm] ElIfs "fi";
 SWhile.  Stm ::= "while" Exp "do" [Stm] "od";
+SFor.    Stm ::= "for" "(" Ident "in" Ident ")" "do" [Stm] "od";
 SReturn. Stm ::= "return" ";";
 -- _. Stm ::= Stm ";" ;
+
+RandomBit. RandExp ::= "randombit" "(" Double ")";
+RandomInt. RandExp ::= "random" "(" Exp "," Exp ")";
+
+NoElse. ElIfs ::= ;
+Else.   ElIfs ::= "else" [Stm] ;
+ElIf.   ElIfs ::= "elif" Exp "then" [Stm] ElIfs ;
 
 EOpA. Exp ::= Exp0 Op Exp0 ;
 EOpB. Exp0 ::= Exp1 Op0 Exp1 ;
@@ -49,6 +59,8 @@ EOpD. Exp2 ::= Exp2 Op2 Exp3 ;
 EOpE. Exp ::= Exp1 Op Exp1 ;
 
 EVar.     Exp3 ::= Ident [Index] ;
+EOp.      Exp3 ::= UnOp Exp3 ;
+EFac.     Exp3 ::= "fac" "(" Exp3 ")";
 EInteger. Exp3 ::= Integer ;
 
 _. Exp ::= Exp0 ;
@@ -59,6 +71,9 @@ _. Exp3 ::= "(" Exp ")" ;
 
 OPlus.  Op1 ::= "+" ;
 OTimes. Op2 ::= "*" ;
+ODiv.   Op2 ::= "/" ;
+OXor.   Op2 ::= "^" ;
+OMod.   Op2 ::= "%" ;
 OMinus. Op1 ::= "-" ;
 OLt. Op0 ::= "<" ;
 OLe. Op0 ::= "<=" ;
@@ -68,6 +83,14 @@ OEq. Op0 ::= "==" ;
 ONe. Op0 ::= "!=" ;
 OAnd. Op ::= "&&" ;
 OOr.  Op ::= "||" ;
+ONot. UnOp ::= "!" ;
 
+TInt1.  Typ ::= "int1" ;
+TInt2.  Typ ::= "int2" ;
+TInt4.  Typ ::= "int4" ;
+TInt8.  Typ ::= "int8" ;
+TInt16. Typ ::= "int16" ;
+TInt32. Typ ::= "int32" ;
+TInt64. Typ ::= "int64" ;
 TInt.   Typ ::= "int" Integer ;
 TArray. Typ ::= "array" "[" Exp "]" "of" Typ ;
