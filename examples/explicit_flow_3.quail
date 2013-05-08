@@ -1,5 +1,5 @@
-observable int3 output;
-secret int3 h;
+observable int 3 output;
+secret int 3 h;
 if (h==0) then
   assign output:=0;
 elif (h==1) then

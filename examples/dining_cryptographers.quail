@@ -2,7 +2,7 @@
 const N:=6;
 
 // this bit represents the output
-observable int1 output;
+observable int1 output := 0;
 
 // these bits represent the coin tosses
 public array [N] of int1 coin;
