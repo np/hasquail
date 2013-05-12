@@ -11,7 +11,6 @@ import Data.Function (on)
 import Data.Set (Set)
 import Data.List
 import Data.Maybe
-import Data.Number.CReal
 import Data.Ratio ((%))
 import Control.Arrow ((&&&))
 import Control.Monad.Reader
@@ -537,7 +536,7 @@ xs@((px , x) : xs') <++> ys@((py, y) : ys') = case compare x y of
   P.GT -> (py , y) : xs <++> ys'
 
 
-collect :: Ord a => ProbTree a -> [(CReal , a)]
+collect :: (Fractional c, Ord a) => ProbTree a -> [(c , a)]
 collect (Leaf x) = [(1 , x)]
 collect (Fork p ls rs) = [ (pc * i , a) | (i , a) <- collect ls]
                     <++> [ (p' * i , a) | (i , a) <- collect rs]
@@ -545,7 +544,7 @@ collect (Fork p ls rs) = [ (pc * i , a) | (i , a) <- collect ls]
     pc = fromRational p 
     p' = 1 - pc
 
-entropy :: [(CReal , a)] -> CReal
+entropy :: Floating c => [(c , a)] -> c
 entropy xs = - sum [ p * logBase 2 p | (p , _) <- xs]
 
 mergeBy :: Num n => (a -> a -> Ordering) -> [(n , a)] -> [(n , a)] 
@@ -553,7 +552,7 @@ mergeBy compare = map (sum . map fst &&& snd . head)
                 . groupBy (((P.EQ ==) .) . compare `on` snd)
                 . sortBy (compare `on` snd)
 
-expected :: Program -> CReal
+expected :: Floating c => Program -> c
 expected prg = t "o" eo + t "s" es - t "os" eos
   where
     t s x = x -- trace ("entropy of " ++ s ++ " is " ++ show x) x
