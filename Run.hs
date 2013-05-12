@@ -1,6 +1,8 @@
 import System.Environment
 import System.Exit
 import System.IO
+import Data.Number.CReal
+
 import Parquail
 import TranslateQuail
 import Printquail
@@ -15,4 +17,6 @@ main = do
     Bad err -> hPutStrLn stderr err >> exitWith (ExitFailure 1)
     Ok t -> do
         putStrLn $ printTree t
-        putStrLn . showProbTree . runProgram . transProgr $ t
+        let st = transProgr $ t
+        putStrLn . showProbTree . runProgram $ st
+        putStrLn $ "bits leaked: " ++ showCReal 100 (expected st)

@@ -1,13 +1,19 @@
 {-# LANGUAGE GADTs, KindSignatures, MultiParamTypeClasses, GeneralizedNewtypeDeriving, FlexibleInstances, UndecidableInstances, FlexibleContexts #-}
 module Types where
 
+
 import Prelude hiding (LT, GT, EQ)
+import qualified Prelude as P
 import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.Set as Set
+import Data.Function (on)
 import Data.Set (Set)
 import Data.List
 import Data.Maybe
+import Data.Number.CReal
+import Data.Ratio ((%))
+import Control.Arrow ((&&&))
 import Control.Monad.Reader
 import Control.Monad.State
 import Numeric
@@ -18,6 +24,12 @@ type Endo a = a -> a
 
 data Range a = Range { rangeFrom :: a, rangeTo :: a }
   deriving (Show)
+
+instance Eq a => Eq (Range a) where
+  (==) = (==) `on` (rangeFrom &&& rangeTo)
+
+instance Ord a => Ord (Range a) where
+  compare = compare `on` (rangeFrom &&& rangeTo)
 
 -- lengthRange (Range i i) = i - i + 1 = 1
 lengthRange :: Range Integer -> Integer
@@ -302,7 +314,7 @@ data PrgEnv = PrgEnv { isPrivate    :: Var -> Bool
 data PrgState = PrgState { publicState  :: Map (Var,[Integer]) Integer
                          , privateState :: Map (Var,[Integer]) (Interval Integer)
                          }
-  deriving (Show)
+  deriving (Eq,Ord,Show)
 
 newtype M a = M { runM :: ReaderT PrgEnv (ProbT (State PrgState)) a }
     deriving (Monad, MonadProb, MonadState PrgState, MonadReader PrgEnv)
@@ -323,10 +335,18 @@ withProbIf iTrue iFalse ifTrue ifFalse = withProb (probIf iTrue iFalse) ifTrue i
 withProbs :: MonadProb m => Range Integer -> (Integer -> m a) -> m a
 withProbs r@(Range i j) f
     | i == j    = f i
+{-
+-- this seeems to be slower actually
+    | i + 1 == j = withProb (1 % 2) (f i) (f j)
+    | otherwise = withProb ((m - i) % lengthRange r)
+                    (withProbs (Range i m) f)
+                    (withProbs (Range (m+1) j) f)
+       where 
+         m = (i + j) `div` 2
+-}
     | otherwise = withProb (1 / fromInteger (lengthRange r))
                            (f i)
                            (withProbs (Range (i+1) j) f)
-
 execStmt :: Exec m => Stmt -> m ()
 execStmt e = execStmt' e {-do s <- get
                 trace ("execStmt=" ++ show e ++ " mem=" ++ showPrgState s) (execStmt' e)-}
@@ -415,6 +435,12 @@ execProgram = mapM_ execDecl
 privVars :: Program -> Set Var
 privVars ds = Set.fromList [v | Decl m _ v _ <- ds, isPrivateMode m]
 
+secVars :: Program -> Set Var
+secVars ds = Set.fromList [v | Decl Secret _ v _ <- ds]
+
+obsVars :: Program -> Set Var
+obsVars ds = Set.fromList [v | Decl Observable _ v _ <- ds]
+
 intervalOfType :: Type a -> Interval Integer
 intervalOfType (TyInt bits)   = range 0 (2^bits-1)
 intervalOfType (TyArray _ ty) = intervalOfType ty
@@ -493,6 +519,53 @@ runProgram prg = flip evalState initialState
         initialEnv = PrgEnv isPriv
                             (fromMaybe (error "not an array") . flip Map.lookup (initVarDim cstEnv prg))
         initialState = PrgState Map.empty (initPrivEnv cstEnv prg)
+
+-- Assumption, input lists are strictly increasing
+-- therefore output will also be
+-- The idea for doing this is that some states might be the same
+-- and we would therefore merge them before doing the three different
+-- entropies (since all three would merge them)
+
+-- I haven't found any case where this have actually improved
+-- the run so it is probably faster if (<++>) = (++)
+(<++>) :: (Num n, Ord a) => [(n , a)] -> [(n , a)] -> [(n , a)]
+[] <++> ys = ys
+xs <++> [] = xs
+xs@((px , x) : xs') <++> ys@((py, y) : ys') = case compare x y of
+  P.LT -> (px , x) : xs' <++> ys
+  P.EQ -> trace "equated" $ (px + py , x) : xs' <++> ys'
+  P.GT -> (py , y) : xs <++> ys'
+
+
+collect :: Ord a => ProbTree a -> [(CReal , a)]
+collect (Leaf x) = [(1 , x)]
+collect (Fork p ls rs) = [ (pc * i , a) | (i , a) <- collect ls]
+                    <++> [ (p' * i , a) | (i , a) <- collect rs]
+  where
+    pc = fromRational p 
+    p' = 1 - pc
+
+entropy :: [(CReal , a)] -> CReal
+entropy xs = - sum [ p * logBase 2 p | (p , _) <- xs]
+
+mergeBy :: Num n => (a -> a -> Ordering) -> [(n , a)] -> [(n , a)] 
+mergeBy compare = map (sum . map fst &&& snd . head) 
+                . groupBy (((P.EQ ==) .) . compare `on` snd)
+                . sortBy (compare `on` snd)
+
+expected :: Program -> CReal
+expected prg = t "o" eo + t "s" es - t "os" eos
+  where
+    t s x = x -- trace ("entropy of " ++ s ++ " is " ++ show x) x
+    st = collect (runProgram prg)
+    oS = filter (\((k,_),_) -> k `Set.member` obsVars prg) . Map.toList . publicState 
+    sS = filter (\((k,_),_) -> k `Set.member` secVars prg) . Map.toList . privateState
+    o  = compare `on` oS
+    s  = compare `on` sS
+    os = compare `on` (oS &&& sS)
+    eo = entropy (mergeBy o  st) 
+    es = entropy (mergeBy s  st)
+    eos = entropy (mergeBy os st)
 
 -- Check ranges in declarations
 --type TypingEnv = Map Var (Mode , Type)
