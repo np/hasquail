@@ -465,6 +465,7 @@ data Mode = Constant
           | Public
           | Secret
           | Private
+  deriving (Eq)
 
 isPublicMode, isPrivateMode :: Mode -> Bool
 isPublicMode Constant = True
@@ -517,14 +518,8 @@ type Program var = [Decl var]
 execProgram :: Exec n var m => Program var -> m ()
 execProgram = mapM_ execDecl
 
-privVars :: Ord var => Program var -> Set var
-privVars ds = Set.fromList [v | Decl m _ v _ <- ds, isPrivateMode m]
-
-secVars :: Ord var => Program var -> Set var
-secVars ds = Set.fromList [v | Decl Secret _ v _ <- ds]
-
-obsVars :: Ord var => Program var -> Set var
-obsVars ds = Set.fromList [v | Decl Observable _ v _ <- ds]
+vars :: Ord var => (Mode -> Bool) -> Program var -> Set var
+vars p ds = Set.fromList [v | Decl m _ v _ <- ds, p m]
 
 intervalOfType :: (Ord n, Num n) => Type a -> Interval n
 intervalOfType (TyInt bits)   = range 0 (2^bits-1)
@@ -611,7 +606,8 @@ programConstants ds = Map.fromList [ (v,fromInteger n) | Cnst v n <- ds ]
 initialEnv :: (Integral n, Ord var) => EvalEnv n var -> Program var -> PrgEnv n var
 initialEnv cstEnv prg = PrgEnv isPriv varDim
   where
-    isPriv = (`Set.member` privVars prg)
+    privVars = vars isPrivateMode prg
+    isPriv = (`Set.member` privVars)
     varDim = fromMaybe (error "not an array") . flip Map.lookup (initVarDim cstEnv prg)
 
 runProgram :: (Show n, Integral n, Show var, Ord var) => Program var -> (ProbTree (PrgState n var), PrgState n var)
@@ -674,8 +670,8 @@ expected prg = (t "o" o + t "s" s - t "os" os , secretBits prgstate prg)
                in x -- trace ("entropy of " ++ _nm ++ " is " ++ show x) x
     (st', prgstate) = runProgram prg
     st = collect st'
-    oV = obsVars prg
-    sV = secVars prg
+    oV = vars (== Observable) prg
+    sV = vars (== Secret)     prg
     oS = filter (\((k,_),_) -> k `Set.member` oV) . Map.toList . publicState 
     sS = filter (\((k,_),_) -> k `Set.member` sV) . Map.toList . privateState
     o  = compare `on` oS
