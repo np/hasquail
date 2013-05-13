@@ -189,22 +189,9 @@ range :: Ord a => a -> a -> Interval a
 range i j | i > j     = []
           | otherwise = [Range i j]
 
--- botRange [i..j] k = [i..k]
-botRange :: Ord a => Range a -> a -> Interval a
-botRange (Range i _j) k = range i k
-
-botInterval :: Ord a => Interval a -> a -> Interval a
-botInterval rs k = [ r' | r <- rs, r' <- botRange r k ]
-
--- topRange [i..j] k = [k..j]
-topRange :: Ord a => Range a -> a -> Interval a
-topRange (Range _i j) k = range k j
-
-topInterval :: Ord a => Interval a -> a -> Interval a
-topInterval rs k = [ r' | r <- rs, r' <- topRange r k ]
-
 splitInterval :: (Ord a, Num a) => Interval a -> a -> IntervalComp a
-splitInterval rs k = IntervalComp (botInterval rs (k-1)) (topInterval rs k)
+splitInterval rs k = IntervalComp [ r' | Range i _j <- rs, r' <- range i (k-1) ]
+                                  [ r' | Range _i j <- rs, r' <- range k j     ]
 
 removeRange :: (Ord a, Num a) => Range a -> a -> Interval a
 removeRange r@(Range i j) k | not (k `memberRange` r) = [r]
