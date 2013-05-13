@@ -136,18 +136,14 @@ evalOp2 (Rel2 rel2) = \x y -> if evalRel2 rel2 x y then 1 else 0
 type EvalEnv var = var -> [Integer] -> Integer
 type EvalPrivEnv var = var -> [Integer] -> Interval Integer
 
-class Eval f o where
-  eval :: EvalEnv var -> f var -> o
+evalExp :: EvalEnv var -> Exp var -> Integer
+evalExp _   (Lit i)         = i
+evalExp env (Op op e)       = evalOp op (evalExp env e)
+evalExp env (Op2 op2 e1 e2) = evalOp2 op2 (evalExp env e1) (evalExp env e2)
+evalExp env (Var v es)      = env v (map (evalExp env) es)
 
-instance o ~ Integer => Eval Exp o where
-  eval _   (Lit i)         = i
-  eval env (Op op e)       = evalOp op (eval env e)
-  eval env (Op2 op2 e1 e2) = evalOp2 op2 (eval env e1) (eval env e2)
-  eval env (Var v es)      = env v (map (eval env) es)
-
--- instance o ~ Interval Integer => Eval Exp o where
 evalRangeExp :: EvalEnv var -> Range (Exp var) -> Interval Integer
-evalRangeExp env (Range e1 e2) = range (eval env e1) (eval env e2)
+evalRangeExp env (Range e1 e2) = range (evalExp env e1) (evalExp env e2)
 
 evalIntervalExp :: EvalEnv var -> Interval (Exp var) -> Interval Integer
 evalIntervalExp env = validateInterval . concatMap (evalRangeExp env)
@@ -230,15 +226,15 @@ evalPrivRel2 GT rs k = flipIntervalComp $ splitInterval rs (k+1)
 evalPrivRel2 NE rs k = flipIntervalComp $ evalPrivRel2 EQ rs k
 
 evalCond :: EvalEnv var -> EvalPrivEnv var -> Cond var -> CompResult var
-evalCond env _    (CondExp e) = BoolComp (eval env e /= 0)
+evalCond env _    (CondExp e) = BoolComp (evalExp env e /= 0)
 evalCond env penv (PrivCond rel2 (v, es) e) =
-  let es' = map (eval env) es in
+  let es' = map (evalExp env) es in
   PrivComp (v, es') $
-    evalPrivRel2 rel2 (penv v es') (eval env e)
+    evalPrivRel2 rel2 (penv v es') (evalExp env e)
 
 evalInitializer :: EvalEnv var -> Initializer (Exp var) -> Initializer Integer
 evalInitializer   _ NoInit           = NoInit
-evalInitializer env (Init e)         = Init (eval env e)
+evalInitializer env (Init e)         = Init (evalExp env e)
 evalInitializer env (IntervalInit i) = IntervalInit (evalIntervalExp env i)
 
 data Stm var = While (Exp var) [Stm var]
@@ -442,7 +438,7 @@ execStm' (If condExp ifTrue ifFalse) =
                     (addPrivEnv (v,es) iFalse >> execStms ifFalse)
 execStm' (Assign (v, es) e) =
     do env <- getEnv
-       addEnv (v,map (eval env) es) (eval env e)
+       addEnv (v,map (evalExp env) es) (evalExp env e)
 execStm' (Random (v, es) (RandomBit d)) =
     withProb (toRational d)
              (execStm (Assign (v, es) (Lit 1)))
@@ -450,7 +446,7 @@ execStm' (Random (v, es) (RandomBit d)) =
 execStm' (Random (v, es) (RandomInt r)) =
     do env <- getEnv
        let i   = evalRangeExp env r
-           es' = map (eval env) es
+           es' = map (evalExp env) es
        case i of
          []   -> error $ "invalid random range: " ++ show r
          [r'] -> withProbs r' $ execStm . Assign (v, map Lit es') . Lit
@@ -552,7 +548,7 @@ initVarDim :: Ord var => EvalEnv var -> Program var -> Map var [Integer]
 initVarDim env ds = Map.fromList
                    [ (v,dimensionOfType ty')
                    | Decl _ ty v _ <- ds
-                   , let ty' = fmap (eval env) ty
+                   , let ty' = fmap (evalExp env) ty
                    ]
 
 -- EvalEnv is not yet used
@@ -566,7 +562,7 @@ initPrivEnv env ds = Map.fromList $
                    [ ((v,xs),initPrivInterval env ty' ini')
                    | Decl m ty v ini <- ds
                    , isPrivateMode m
-                   , let ty'  = fmap (eval env) ty
+                   , let ty'  = fmap (evalExp env) ty
                          ini' = evalInitializer env ini
                    , xs <- enumIxs . dimensionOfType $ ty'
                    ]
@@ -586,7 +582,7 @@ secretBits st ds
   = sum [ secretPrivInterval env ty i
   | Decl Secret ty' _ i' <- ds 
   , let i = evalInitializer env i'
-  , let ty = fmap (eval env) ty'
+  , let ty = fmap (evalExp env) ty'
   ]
   where env v xs = fromMaybe (error ("no such public variable: " ++ show (v,xs))) $ Map.lookup (v, xs) (publicState st)
   
