@@ -703,16 +703,16 @@ expected prg = (t "o" o + t "s" s - t "os" os , secretBits cstEnv prg)
   where
     t :: forall b. Ord b => String -> (PrgState n var -> b) -> c
     t _nm f = let x = entropy (mergeBy (compare `on` f) st)
-               in x -- trace ("entropy of " ++ _nm ++ " is " ++ show x) x
+               in trace ("entropy of " ++ _nm ++ " is " ++ show x) x
     cstEnv v [] = fromMaybe (error "not a constant") (Map.lookup v (programConstants prg))
     cstEnv _ _  = error "unexpected constant array"
-    st' = runProgram cstEnv prg
-    st = collect st'
-    oV = vars (== Observable) prg
-    sV = vars (== Secret)     prg
-    o  = filter (\((k,_),_) -> k `Set.member` oV) . Map.toList . publicState
-    s  = filter (\((k,_),_) -> k `Set.member` sV) . Map.toList . privateState
+    st = trace "running" $ collect $ runProgram cstEnv prg
+    o  = filterState Observable . publicState
+    s  = filterState Secret     . privateState
     os = o &&& s
+    filterState :: Mode -> Map (var,ix) o -> [((var,ix),o)]
+    filterState m = filter (\((k,_),_) -> k `Set.member` v) . Map.toList
+       where v = vars (== m) prg
 
 -- -}
 -- -}
