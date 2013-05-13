@@ -260,6 +260,7 @@ instance Traversable Stm where
   traverse f (Random (v, es) e)
     = Random <$> ((,) <$> f v <*> traverse (traverse f) es)
              <*> traverse f e
+  traverse _ Return = pure Return
 
 instance Functor  Stm where fmap = fmapDefault
 instance Foldable Stm where foldMap = foldMapDefault
