@@ -3,8 +3,9 @@ import System.Exit
 import System.IO
 import System.Console.GetOpt
 import Data.Number.CReal
-
+import Data.Char
 import Control.Monad
+
 import Parquail
 import TranslateQuail
 import Printquail
@@ -22,7 +23,9 @@ options =
   , Option []  ["version"] (NoArg Version) "show version number"
   ]
 
-verbose = Verbose . read
+verbose :: String -> Flag
+verbose s | all isDigit s = Verbose $ read s
+          | otherwise     = error $ "unexpected verbose argument: " ++ show s
 
 precision :: String -> Flag
 precision s = Precision (read s)
@@ -36,6 +39,7 @@ main = do
   case getOpt Permute options args of
     (o , [fp] , []) -> do 
       s <- readFile fp
+      let v = last $ 2 : [i | Verbose i <- o]
       if Version `elem` o
        then printVersion
        else if Help `elem` o 
@@ -44,7 +48,7 @@ main = do
           Bad err -> hPutStrLn stderr err >> exitWith (ExitFailure 1)
           Ok t -> do
               let pr = head ([ i | Precision i <- o] ++ [10])
-              -- putStrLn $ printTree t
+              when (v > 0) $ putStrLn $ printTree t
               let st = transProgr $ t
               let (leak , totSecret) = expected st
               let totSec = logBase 2 (fromInteger totSecret) 
