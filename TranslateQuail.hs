@@ -18,26 +18,26 @@ transIdent x = case x of
   Ident str  -> str
 
 
-transProgr :: Progr -> T.Program
+transProgr :: Progr -> T.Program String
 transProgr x = case x of
   Program decs -> map transDec decs
  -- Program decs -> [transDec decs]
 
 
-transDec :: Dec -> T.Decl
+transDec :: Dec -> T.Decl String
 transDec x = case x of
   Decl mode typ id initializer  -> T.Decl (transMode mode) (transTyp typ) (transIdent id) (transInitializer initializer)
   Cnst id n  -> T.Cnst (transIdent id) n
   Code stm -> T.Code (transStm stm)
 
 
-transInitializer :: Initializer -> T.Initializer T.Expr
+transInitializer :: Initializer -> T.Initializer (T.Exp String)
 transInitializer x = case x of
   NoInit  -> T.NoInit
   ExpInit exp  -> T.Init (transExp exp)
   IntervalInit ranges  -> T.IntervalInit $ map transRange ranges
 
-transRange :: Range -> T.Range T.Expr
+transRange :: Range -> T.Range (T.Exp String)
 transRange x = case x of
   Rng exp1 exp2  -> T.Range (transExp exp1) (transExp exp2)
 
@@ -51,12 +51,12 @@ transMode x = case x of
   Private  -> T.Private
 
 
-transIndex :: Index -> T.Expr
+transIndex :: Index -> (T.Exp String)
 transIndex x = case x of
   Idx exp  -> transExp exp
 
 
-transStm :: Stm -> T.Stmt
+transStm :: Stm -> T.Stm String
 transStm x = case x of
   SAssign id ixs exp  -> T.Assign (transIdent id, map transIndex ixs) (transExp exp)
   SRandom id ixs randexp  -> T.Random (transIdent id, map transIndex ixs) (transRandExp randexp)
@@ -66,13 +66,13 @@ transStm x = case x of
   SReturn  -> T.Return
 
 
-transRandExp :: RandExp -> T.RandExp
+transRandExp :: RandExp -> T.RandExp String
 transRandExp x = case x of
   RandomBit d  -> T.RandomBit d
   RandomInt exp1 exp2  -> T.RandomInt (T.Range (transExp exp1) (transExp exp2))
 
 
-transElIfs :: ElIfs -> [T.Stmt]
+transElIfs :: ElIfs -> [T.Stm String]
 transElIfs x = case x of
   NoElse -> []
   Else stms  -> map transStm stms
@@ -80,7 +80,7 @@ transElIfs x = case x of
 
 
 
-transExp :: Exp -> T.Expr
+transExp :: Exp -> (T.Exp String)
 transExp x = case x of
   EOpA exp1 op2 exp3  -> app2 op2 exp1 exp3
   EOpB exp1 op2 exp3  -> app2 op2 exp1 exp3
@@ -111,7 +111,7 @@ transOp2 x = case x of
   OAnd  -> T.And
   OOr   -> T.Or
 
-transTyp :: Typ -> T.Type T.Expr
+transTyp :: Typ -> T.Type (T.Exp String)
 transTyp x = case x of
   TInt1   -> T.TyInt 1
   TInt2   -> T.TyInt 2

@@ -2,19 +2,22 @@
 module Types where
 
 
-import Prelude hiding (LT, GT, EQ)
+import Prelude hiding (LT, GT, EQ, sum, product, concatMap, mapM_, any)
 import qualified Prelude as P
 import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.Set as Set
 import Data.Function (on)
 import Data.Set (Set)
-import Data.List
+import Data.List (intercalate, groupBy, sortBy) -- hiding (sum, product, concatMap, mapM_)
 import Data.Maybe
+import Data.Foldable
+import Data.Traversable
 -- import Data.Ratio ((%))
 import Control.Arrow ((&&&))
-import Control.Monad.Reader
-import Control.Monad.State
+import Control.Applicative
+import Control.Monad.Reader hiding (mapM_)
+import Control.Monad.State hiding (mapM_)
 import Numeric
 import Debug.Trace
 --import Data.Functor.Identity
@@ -46,8 +49,8 @@ wellFormedInterval (r1@(Range _ j) : r2@(Range k _) : rs)
   = k > j && wellFormedRange r1 && wellFormedInterval (r2 : rs)
 
 validate :: String -> (a -> Bool) -> a -> a
-validate msg pred x | pred x = x
-                    | otherwise = error $ "validate: " ++ msg
+validate msg p x | p x       = x
+                 | otherwise = error $ "validate: " ++ msg
 
 validateInterval :: Interval Integer -> Interval Integer
 validateInterval = validate "wellFormedInterval" wellFormedInterval
@@ -58,7 +61,7 @@ lengthInterval = sum . map lengthRange
 singletonInterval :: a -> Interval a
 singletonInterval x = [Range x x]
 
-type Var = String
+--type Val = String
 
 data Type a = TyInt { width :: Int }
             | TyArray { arraySize :: a
@@ -77,13 +80,30 @@ data Op2 = Add | Sub | Mul | Div | Mod | And | Or | Xor | Rel2 Rel2
 data Rel2 = LE | LT | GE | GT | EQ | NE
   deriving (Show)
 
-data Expr = Lit Integer
-          | Op Op Expr
-          | Op2 Op2 Expr Expr
-          | Var Var [Expr] -- Var v xs: v is an array, xs are indices
-                           -- in particular if xs is null then v is
-                           -- just an integer variable.
+-- 'var' is the type of variables
+data Exp var
+  = Lit Integer
+  | Op Op (Exp var)
+  | Op2 Op2 (Exp var) (Exp var)
+  | Var var [Exp var] -- Var v xs: v is an array, xs are indices
+                       -- in particular if xs is null then v is
+                       -- just an integer variable.
   deriving (Show)
+
+instance Functor Exp where
+  fmap f (Lit i) = Lit i
+  fmap f (Op op e) = Op op (fmap f e)
+  fmap f (Op2 op2 e1 e2) = Op2 op2 (fmap f e1) (fmap f e2)
+  fmap f (Var x es) = Var (f x) (fmap (fmap f) es)
+
+instance Traversable Exp where
+  traverse _ (Lit i) = pure (Lit i)
+  traverse f (Op op e) = Op op <$> traverse f e
+  traverse f (Op2 op2 e1 e2) = Op2 op2 <$> traverse f e1 <*> traverse f e2
+  traverse f (Var x es) = Var <$> f x <*> traverse (traverse f) es
+
+instance Foldable Exp where
+  foldMap = foldMapDefault
 
 boolOp :: (Bool -> Bool) -> Integer -> Integer
 boolOp op x = if op (x /= 0) then 1 else 0
@@ -106,23 +126,24 @@ evalOp2 Or  = boolOp2 (||)
 evalOp2 Xor = boolOp2 (/=)
 evalOp2 (Rel2 rel2) = \x y -> if evalRel2 rel2 x y then 1 else 0
 
-type EvalEnv = Var -> [Integer] -> Integer
-type EvalPrivEnv = Var -> [Integer] -> Interval Integer
+type EvalEnv var = var -> [Integer] -> Integer
+type EvalPrivEnv var = var -> [Integer] -> Interval Integer
 
-evalExpr :: EvalEnv -> Expr -> Integer
-evalExpr _   (Lit i)         = i
-evalExpr env (Op op e)       = evalOp op (evalExpr env e)
-evalExpr env (Op2 op2 e1 e2) = evalOp2 op2 (evalExpr env e1) (evalExpr env e2)
-evalExpr env (Var v es)      = env v (map (evalExpr env) es)
+evalExp :: EvalEnv var -> Exp var -> Integer
+evalExp _   (Lit i)         = i
+evalExp env (Op op e)       = evalOp op (evalExp env e)
+evalExp env (Op2 op2 e1 e2) = evalOp2 op2 (evalExp env e1) (evalExp env e2)
+evalExp env (Var v es)      = env v (map (evalExp env) es)
 
-evalRangeExpr :: EvalEnv -> Range Expr -> Interval Integer
-evalRangeExpr env (Range e1 e2) = range (evalExpr env e1) (evalExpr env e2)
+evalRangeExp :: EvalEnv var -> Range (Exp var) -> Interval Integer
+evalRangeExp env (Range e1 e2) = range (evalExp env e1) (evalExp env e2)
 
-evalIntervalExpr :: EvalEnv -> Interval Expr -> Interval Integer
-evalIntervalExpr env = validateInterval . concatMap (evalRangeExpr env)
+evalIntervalExp :: EvalEnv var -> Interval (Exp var) -> Interval Integer
+evalIntervalExp env = validateInterval . concatMap (evalRangeExp env)
 
-data Cond = CondExpr Expr
-          | PrivCond Rel2 (Var, [Expr]) Expr
+data Cond var
+   = CondExp (Exp var)
+   | PrivCond Rel2 (var, [Exp var]) (Exp var)
   deriving (Show)
 
 evalRel2 :: Rel2 -> Integer -> Integer -> Bool
@@ -136,8 +157,9 @@ evalRel2 NE = (/=)
 data IntervalComp = IntervalComp { trueInterval, falseInterval :: Interval Integer }
   deriving (Show)
 
-data CompResult = PrivComp (Var,[Integer]) IntervalComp
-                | BoolComp Bool
+data CompResult var
+  = PrivComp (var,[Integer]) IntervalComp
+  | BoolComp Bool
   deriving (Show)
 
 flipIntervalComp :: IntervalComp -> IntervalComp
@@ -187,28 +209,29 @@ evalPrivRel2 GE rs k = flipIntervalComp $ splitInterval rs k
 evalPrivRel2 GT rs k = flipIntervalComp $ splitInterval rs (k+1)
 evalPrivRel2 NE rs k = flipIntervalComp $ evalPrivRel2 EQ rs k
 
-evalCond :: EvalEnv -> EvalPrivEnv -> Cond -> CompResult
-evalCond env _    (CondExpr e) = BoolComp (evalExpr env e /= 0)
+evalCond :: EvalEnv var -> EvalPrivEnv var -> Cond var -> CompResult var
+evalCond env _    (CondExp e) = BoolComp (evalExp env e /= 0)
 evalCond env penv (PrivCond rel2 (v, es) e) =
-  let es' = map (evalExpr env) es in
+  let es' = map (evalExp env) es in
   PrivComp (v, es') $
-    evalPrivRel2 rel2 (penv v es') (evalExpr env e)
+    evalPrivRel2 rel2 (penv v es') (evalExp env e)
 
-evalInitializer :: EvalEnv -> Initializer Expr -> Initializer Integer
-evalInitializer env NoInit           = NoInit
-evalInitializer env (Init e)         = Init (evalExpr env e)
-evalInitializer env (IntervalInit i) = IntervalInit (evalIntervalExpr env i)
+evalInitializer :: EvalEnv var -> Initializer (Exp var) -> Initializer Integer
+evalInitializer   _ NoInit           = NoInit
+evalInitializer env (Init e)         = Init (evalExp env e)
+evalInitializer env (IntervalInit i) = IntervalInit (evalIntervalExp env i)
 
-data Stmt = While Expr [Stmt]
-          | For Var Var [Stmt]
-          | If Expr [Stmt] [Stmt]
-          | Assign (Var, [Expr]) Expr
-          | Random (Var, [Expr]) RandExp
-          | Return
+data Stm var = While (Exp var) [Stm var]
+             | For var var [Stm var]
+             | If (Exp var) [Stm var] [Stm var]
+             | Assign (var, [Exp var]) (Exp var)
+             | Random (var, [Exp var]) (RandExp var)
+             | Return
   deriving (Show)
 
-data RandExp = RandomBit Double
-             | RandomInt (Range Expr)
+data RandExp var
+  = RandomBit Double
+  | RandomInt (Range (Exp var))
   deriving (Show)
 
 type Probability = Rational
@@ -219,18 +242,23 @@ probIf rs1 rs2 = fromInteger (lengthInterval rs1) / fromInteger (lengthInterval 
 class Monad m => MonadProb m where
   withProb :: Probability -> m a -> m a -> m a
 
-class (MonadProb m, MonadReader PrgEnv m, MonadState PrgState m) => Exec m where
+class (MonadProb m,
+       MonadReader (PrgEnv var) m,
+       MonadState (PrgState var) m,
+       Show var,
+       Ord var)
+      => Exec var m where
 
-getEnv :: Exec m => m EvalEnv
+getEnv :: Exec var m => m (EvalEnv var)
 getEnv = gets (\s v xs -> fromMaybe (error ("no such public variable: " ++ show (v,xs))) (Map.lookup (v, xs) (publicState s)))
 
-getPrivEnv :: Exec m => m EvalPrivEnv
+getPrivEnv :: Exec var m => m (EvalPrivEnv var)
 getPrivEnv = gets (\s v xs -> fromMaybe (error ("no such private variable: " ++ show (v,xs))) (Map.lookup (v, xs) (privateState s)))
 
-addEnv :: Exec m => (Var, [Integer]) -> Integer -> m ()
+addEnv :: Exec var m => (var, [Integer]) -> Integer -> m ()
 addEnv vxs i = modify (\s -> s { publicState = Map.insert vxs i (publicState s) })
 
-addPrivEnv :: Exec m => (Var, [Integer]) -> Interval Integer -> m ()
+addPrivEnv :: Exec var m => (var, [Integer]) -> Interval Integer -> m ()
 addPrivEnv vxs i = modify (\s -> s { privateState = Map.insert vxs i (privateState s) })
 
 data BinTree n a where
@@ -303,32 +331,38 @@ instance MonadProb m => MonadProb (ReaderT e m) where
                       lift (withProb p (runReaderT l e) (runReaderT r e))
   -- withProb p l r = lift (withProb p) `ap` l `ap` r -- ReaderT (\e -> withProb p (runReaderT l e) (runReaderT r e))
 
-data PrgEnv = PrgEnv { isPrivate    :: Var -> Bool
-                     , varDimension :: Var -> [Integer]
-                  -- , prgConstants :: Var -> Maybe Integer
-                     }
+data PrgEnv var
+  = PrgEnv { isPrivate    :: var -> Bool
+           , varDimension :: var -> [Integer]
+        -- , prgConstants :: var -> Maybe Integer
+           }
 
 -- program counter
                   -- , transitions  :: [Transition]
-data PrgState = PrgState { publicState  :: Map (Var,[Integer]) Integer
-                         , privateState :: Map (Var,[Integer]) (Interval Integer)
-                         }
+data PrgState var
+  = PrgState { publicState  :: Map (var,[Integer]) Integer
+             , privateState :: Map (var,[Integer]) (Interval Integer)
+             }
   deriving (Eq,Ord,Show)
 
-newtype M a = M { runM :: ReaderT PrgEnv (ProbT (State PrgState)) a }
-    deriving (Monad, MonadProb, MonadState PrgState, MonadReader PrgEnv)
+newtype M var a = M { runM :: ReaderT (PrgEnv var)
+                                (ProbT
+                                   (State (PrgState var))) a }
+    deriving (Monad, MonadProb,
+              MonadState (PrgState var),
+              MonadReader (PrgEnv var))
 
-instance Exec M where
+instance (Ord var, Show var) => Exec var (M var) where
 
-viewCond :: (Var -> Bool) -> Expr -> Cond
+viewCond :: (var -> Bool) -> Exp var -> Cond var
 viewCond isPriv (Op2 (Rel2 rel2) (Var v es) e2)
   | isPriv v = PrivCond rel2 (v, es) e2
-viewCond _ e = CondExpr e
+viewCond _ e = CondExp e
 
 withProbIf :: MonadProb m => Interval Integer -> Interval Integer -> m a -> m a -> m a
 withProbIf []    []     _      _       = error "impossible IntervalComp [] []"
-withProbIf []    iFalse _      ifFalse = ifFalse
-withProbIf iTrue []     ifTrue _       = ifTrue
+withProbIf []    _      _      ifFalse = ifFalse
+withProbIf _     []     ifTrue _       = ifTrue
 withProbIf iTrue iFalse ifTrue ifFalse = withProb (probIf iTrue iFalse) ifTrue ifFalse
 
 withProbs :: MonadProb m => Range Integer -> (Integer -> m a) -> m a
@@ -347,59 +381,59 @@ withProbs r@(Range i j) f
                            (f i)
                            (withProbs (Range (i+1) j) f)
 -- -}
-execStmt :: Exec m => Stmt -> m ()
-execStmt e = execStmt' e {-do s <- get
-                trace ("execStmt=" ++ show e ++ " mem=" ++ showPrgState s) (execStmt' e)-}
-execStmt' :: Exec m => Stmt -> m ()
-execStmt' (If condExp ifTrue ifFalse) =
+execStm :: Exec var m => Stm var -> m ()
+execStm e = execStm' e {-do s <- get
+                trace ("execStm=" ++ show e ++ " mem=" ++ showPrgState s) (execStm' e)-}
+execStm' :: Exec var m => Stm var -> m ()
+execStm' (If condExp ifTrue ifFalse) =
   do env  <- getEnv
      penv <- getPrivEnv
      isPriv <- asks isPrivate
      let cond = viewCond isPriv condExp
      case evalCond env penv cond of
-       BoolComp b -> execStmts (if b then ifTrue else ifFalse)
+       BoolComp b -> execStms (if b then ifTrue else ifFalse)
        PrivComp (v,es) (IntervalComp iTrue iFalse) ->
          withProbIf iTrue iFalse
-                    (addPrivEnv (v,es) iTrue  >> execStmts ifTrue)
-                    (addPrivEnv (v,es) iFalse >> execStmts ifFalse)
-execStmt' (Assign (v, es) e) =
+                    (addPrivEnv (v,es) iTrue  >> execStms ifTrue)
+                    (addPrivEnv (v,es) iFalse >> execStms ifFalse)
+execStm' (Assign (v, es) e) =
     do env <- getEnv
-       addEnv (v,map (evalExpr env) es) (evalExpr env e)
-execStmt' (Random (v, es) (RandomBit d)) =
+       addEnv (v,map (evalExp env) es) (evalExp env e)
+execStm' (Random (v, es) (RandomBit d)) =
     withProb (toRational d)
-             (execStmt (Assign (v, es) (Lit 1)))
-             (execStmt (Assign (v, es) (Lit 0)))
-execStmt' (Random (v, es) (RandomInt r)) =
+             (execStm (Assign (v, es) (Lit 1)))
+             (execStm (Assign (v, es) (Lit 0)))
+execStm' (Random (v, es) (RandomInt r)) =
     do env <- getEnv
-       let i   = evalRangeExpr env r
-           es' = map (evalExpr env) es
+       let i   = evalRangeExp env r
+           es' = map (evalExp env) es
        case i of
          []   -> error $ "invalid random range: " ++ show r
-         [r'] -> withProbs r' $ execStmt . Assign (v, map Lit es') . Lit
-         _    -> error "execStmt: RandomInt: impossible"
-execStmt' loop@(While cond body) = execStmt (If cond (body ++ [loop]) [])
-execStmt' (For v arr body) =
+         [r'] -> withProbs r' $ execStm . Assign (v, map Lit es') . Lit
+         _    -> error "execStm: RandomInt: impossible"
+execStm' loop@(While cond body) = execStm (If cond (body ++ [loop]) [])
+execStm' (For v arr body) =
     do varDim <- asks varDimension
        let len:_ = varDim arr
            stms = [stm | i <- [0..len-1]
                       , stm <- (Assign (v,[]) (Var arr [Lit i]) :
                                 body ++
                                 [Assign (arr,[Lit i]) (Var v [])]) ]
-       execStmts stms
+       execStms stms
 
-execStmt' Return = return ()
+execStm' Return = return ()
 
-execStmts :: Exec m => [Stmt] -> m ()
-execStmts = mapM_ execStmt
+execStms :: Exec var m => [Stm var] -> m ()
+execStms = mapM_ execStm
 
-data Mode = Const
+data Mode = Constant
           | Observable
           | Public
           | Secret
           | Private
 
 isPublicMode, isPrivateMode :: Mode -> Bool
-isPublicMode Const = True
+isPublicMode Constant = True
 isPublicMode Observable = True
 isPublicMode Public = True
 isPublicMode Secret = False
@@ -411,34 +445,35 @@ data Initializer a =
  | Init a
  | IntervalInit (Interval a)
 
-data Decl = Decl Mode (Type Expr) Var (Initializer Expr) -- e.g. secret x : int 3;
-          | Cnst Var Integer                             -- const x := 2;
-          | Code Stmt
+data Decl var
+  = Decl Mode (Type (Exp var)) var (Initializer (Exp var)) -- e.g. secret x : int 3;
+  | Cnst var Integer                                       -- const x := 2;
+  | Code (Stm var)
 
-execInit :: Exec m => Var -> Initializer Expr -> m ()
+execInit :: Exec var m => var -> Initializer (Exp var) -> m ()
 execInit _ NoInit            = return ()
 execInit v (Init e)          = do arrDim <- asks varDimension
-                                  execStmts [ Assign (v,map Lit ixs) e | ixs <- enumIxs (arrDim v) ]
+                                  execStms [ Assign (v,map Lit ixs) e | ixs <- enumIxs (arrDim v) ]
 execInit v (IntervalInit rs) = do env <- getEnv
-                                  addPrivEnv (v,[]) (evalIntervalExpr env rs)
+                                  addPrivEnv (v,[]) (evalIntervalExp env rs)
 
-execDecl :: Exec m => Decl -> m ()
-execDecl (Decl _ _ v init) = execInit v init
-execDecl (Cnst v n)        = execStmt (Assign (v,[]) (Lit n))
-execDecl (Code s)          = execStmt s
+execDecl :: Exec var m => Decl var -> m ()
+execDecl (Decl _ _ v ini) = execInit v ini
+execDecl (Cnst v n)       = execStm (Assign (v,[]) (Lit n))
+execDecl (Code s)         = execStm s
 
-type Program = [Decl]
+type Program var = [Decl var]
 
-execProgram :: Exec m => Program -> m ()
+execProgram :: Exec var m => Program var -> m ()
 execProgram = mapM_ execDecl
 
-privVars :: Program -> Set Var
+privVars :: Ord var => Program var -> Set var
 privVars ds = Set.fromList [v | Decl m _ v _ <- ds, isPrivateMode m]
 
-secVars :: Program -> Set Var
+secVars :: Ord var => Program var -> Set var
 secVars ds = Set.fromList [v | Decl Secret _ v _ <- ds]
 
-obsVars :: Program -> Set Var
+obsVars :: Ord var => Program var -> Set var
 obsVars ds = Set.fromList [v | Decl Observable _ v _ <- ds]
 
 intervalOfType :: Type a -> Interval Integer
@@ -457,25 +492,26 @@ instance Functor Type where
   fmap _ (TyInt i)       = TyInt i
   fmap f (TyArray sz ty) = TyArray (f sz) (fmap f ty)
 
-initVarDim :: EvalEnv -> Program -> Map Var [Integer]
+initVarDim :: Ord var => EvalEnv var -> Program var -> Map var [Integer]
 initVarDim env ds = Map.fromList
                    [ (v,dimensionOfType ty')
-                   | Decl m ty v _ <- ds
-                   , let ty' = fmap (evalExpr env) ty
+                   | Decl _ ty v _ <- ds
+                   , let ty' = fmap (evalExp env) ty
                    ]
 
-initPrivInterval :: EvalEnv -> Type Integer -> Initializer Integer -> Interval Integer
-initPrivInterval env ty NoInit           = intervalOfType ty
-initPrivInterval env _  (Init _)         = error "initPrivInterval"
-initPrivInterval env _  (IntervalInit i) = i
+-- EvalEnv is not yet used
+initPrivInterval :: EvalEnv var -> Type Integer -> Initializer Integer -> Interval Integer
+initPrivInterval   _ ty NoInit           = intervalOfType ty
+initPrivInterval   _ _  (Init _)         = error "initPrivInterval"
+initPrivInterval   _ _  (IntervalInit i) = i
 
-initPrivEnv :: EvalEnv -> Program -> Map (Var,[Integer]) (Interval Integer)
+initPrivEnv :: Ord var => EvalEnv var -> Program var -> Map (var,[Integer]) (Interval Integer)
 initPrivEnv env ds = Map.fromList $
-                   [ ((v,xs),initPrivInterval env ty' init')
-                   | Decl m ty v init <- ds
+                   [ ((v,xs),initPrivInterval env ty' ini')
+                   | Decl m ty v ini <- ds
                    , isPrivateMode m
-                   , let ty'   = fmap (evalExpr env) ty
-                         init' = evalInitializer env init
+                   , let ty'  = fmap (evalExp env) ty
+                         ini' = evalInitializer env ini
                    , xs <- enumIxs . dimensionOfType $ ty'
                    ]
 
@@ -483,38 +519,39 @@ secretOfType :: Type Integer -> Integer
 secretOfType (TyInt bits)   = 2^bits
 secretOfType (TyArray s ty) = secretOfType ty ^ s
 
-secretPrivInterval :: EvalEnv -> Type Integer -> Initializer Integer -> Integer
-secretPrivInterval env ty NoInit           = secretOfType ty
-secretPrivInterval env _  (Init _)         = error "initPrivInterval"
-secretPrivInterval env ty  (IntervalInit i) = lengthInterval i ^ product (dimensionOfType ty)
+-- EvalEnv is not yet used
+secretPrivInterval :: EvalEnv var -> Type Integer -> Initializer Integer -> Integer
+secretPrivInterval _ ty NoInit           = secretOfType ty
+secretPrivInterval _ _  (Init _)         = error "initPrivInterval"
+secretPrivInterval _ ty  (IntervalInit i) = lengthInterval i ^ product (dimensionOfType ty)
 
-secretBits :: PrgState -> Program -> Integer
+secretBits :: (Show var, Ord var) => PrgState var -> Program var -> Integer
 secretBits st ds 
   = sum [ secretPrivInterval env ty i
   | Decl Secret ty' _ i' <- ds 
   , let i = evalInitializer env i'
-  , let ty = fmap (evalExpr env) ty'
+  , let ty = fmap (evalExp env) ty'
   ]
   where env v xs = fromMaybe (error ("no such public variable: " ++ show (v,xs))) $ Map.lookup (v, xs) (publicState st)
   
 
-showProbTree :: ProbTree PrgState -> String
+showProbTree :: Show var => ProbTree (PrgState var) -> String
 showProbTree = show . mapBinTree (($"") . showDouble . fromRational) showPrgState
   where showDouble :: Double -> ShowS
         showDouble = showFFloat Nothing
 
-showPrgState :: PrgState -> String
+showPrgState :: Show var => PrgState var -> String
 showPrgState (PrgState pub priv) =
    "Pub:"  ++ intercalate "," (map showPub $ Map.toList pub) ++
   ",Priv:" ++ intercalate "," (map showPriv $ Map.toList priv)
 
-showPub :: ((Var,[Integer]),Integer) -> String
-showPub ((v,[]),i) = v ++ "=" ++ show i
-showPub ((v,xs),i) = v ++ show xs ++ "=" ++ show i
+showPub :: Show var => ((var,[Integer]),Integer) -> String
+showPub ((v,[]),i) = show v ++ "=" ++ show i
+showPub ((v,xs),i) = show v ++ show xs ++ "=" ++ show i
 
-showPriv :: ((Var,[Integer]),Interval Integer) -> String
-showPriv ((v,[]),i) = v ++ "=" ++ showInterval i
-showPriv ((v,xs),i) = v ++ show xs ++ "=" ++ showInterval i
+showPriv :: Show var => ((var,[Integer]),Interval Integer) -> String
+showPriv ((v,[]),i) = show v ++ "=" ++ showInterval i
+showPriv ((v,xs),i) = show v ++ show xs ++ "=" ++ showInterval i
 
 showInterval :: Interval Integer -> String
 showInterval = concatMap showRange
@@ -522,27 +559,25 @@ showInterval = concatMap showRange
 showRange :: Range Integer -> String
 showRange (Range i j) = "[" ++ show i ++ ".." ++ show j ++ "]"
 
-programConstants :: Program -> Map Var Integer
+programConstants :: Ord var => Program var -> Map var Integer
 programConstants ds = Map.fromList [ (v,n) | Cnst v n <- ds ]
 
-initialEnv :: Program -> PrgEnv
-initialEnv prg = PrgEnv isPriv
-                            (fromMaybe (error "not an array") . flip Map.lookup (initVarDim cstEnv prg))
+initialEnv :: Ord var => EvalEnv var -> Program var -> PrgEnv var
+initialEnv cstEnv prg = PrgEnv isPriv varDim
   where
-    cstEnv v [] = fromMaybe (error "not a constant") (Map.lookup v (programConstants prg))
-    cstEnv v _  = error "unexpected constant array"
     isPriv = (`Set.member` privVars prg)
+    varDim = fromMaybe (error "not an array") . flip Map.lookup (initVarDim cstEnv prg)
 
-runProgram :: Program -> (ProbTree PrgState , PrgState)
+runProgram :: (Show var, Ord var) => Program var -> (ProbTree (PrgState var), PrgState var)
 runProgram prg = flip runState initialState
                . runProbT const
-               . flip runReaderT (initialEnv prg)
+               . flip runReaderT (initialEnv cstEnv prg)
                . runM
                . execProgram
                $ prg
   where 
         cstEnv v [] = fromMaybe (error "not a constant") (Map.lookup v (programConstants prg))
-        cstEnv v _  = error "unexpected constant array"
+        cstEnv _ _  = error "unexpected constant array"
         initialState = PrgState Map.empty (initPrivEnv cstEnv prg)
 
 -- Assumption, input lists are strictly increasing
@@ -586,11 +621,11 @@ matchVar pa pb = PrgState
   }
 -}
 
-expected :: (Show c , Floating c) => Program -> (c , Integer)
+expected :: (Show var, Ord var, Show c , Floating c) => Program var -> (c , Integer)
 expected prg = (t "o" o + t "s" s - t "os" os , secretBits prgstate prg)
   where
-    t s cmp = let x = entropy (mergeBy cmp st)
-               in x -- trace ("entropy of " ++ s ++ " is " ++ show x) x
+    t _nm cmp = let x = entropy (mergeBy cmp st)
+               in x -- trace ("entropy of " ++ _nm ++ " is " ++ show x) x
     (st', prgstate) = runProgram prg
     st = collect st'
     oV = obsVars prg
@@ -600,34 +635,6 @@ expected prg = (t "o" o + t "s" s - t "os" os , secretBits prgstate prg)
     o  = compare `on` oS
     s  = compare `on` sS
     os = compare `on` (oS &&& sS)
-
--- Check ranges in declarations
---type TypingEnv = Map Var (Mode , Type)
-
---type StateIdent = Integer
-
-           {-
-data Transition = Transition { probability :: Rational
-                             , target      :: StateIdent }
-
-type Chain = Map StateIdent State
-
-translateProgram :: Program -> State
-translateProgram = undefined
--}
-
--- Var
-
-{-
-update :: State -> Decl -> State
-update s (Decl m ty v interval)
-    | isPublicMode m = s { publicState = Map.insert v ( (publicState s) }
-    | otherwise  = ?
-update s (Code stm) = ?
-
-trPrg :: TypingEnv -> Chain -> StateIdent -> Program -> State
-trPrg env chain ident [] = error "no return" -- Map.lookup chain ident
-trPrg env chain ident (Decl mode ty v interval) = 
 
 -- -}
 -- -}
