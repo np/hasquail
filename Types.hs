@@ -33,6 +33,12 @@ instance Eq a => Eq (Range a) where
 instance Ord a => Ord (Range a) where
   compare = compare `on` (rangeFrom &&& rangeTo)
 
+instance Traversable Range where
+  traverse f (Range x y) = Range <$> f x <*> f y
+
+instance Functor  Range where fmap = fmapDefault
+instance Foldable Range where foldMap = foldMapDefault
+
 -- lengthRange (Range i i) = i - i + 1 = 1
 lengthRange :: Range Integer -> Integer
 lengthRange (Range i j) = j - i + 1
@@ -68,6 +74,13 @@ data Type a = TyInt { width :: Int }
                       , elemType  :: Type a }
   deriving (Show)
 
+instance Traversable Type where
+  traverse _ (TyInt i)       = pure (TyInt i)
+  traverse f (TyArray sz ty) = TyArray <$> f sz <*> traverse f ty
+
+instance Functor  Type where fmap = fmapDefault
+instance Foldable Type where foldMap = foldMapDefault
+
 data Op = Not | Fac
   deriving (Show)
 
@@ -90,20 +103,14 @@ data Exp var
                        -- just an integer variable.
   deriving (Show)
 
-instance Functor Exp where
-  fmap f (Lit i) = Lit i
-  fmap f (Op op e) = Op op (fmap f e)
-  fmap f (Op2 op2 e1 e2) = Op2 op2 (fmap f e1) (fmap f e2)
-  fmap f (Var x es) = Var (f x) (fmap (fmap f) es)
-
 instance Traversable Exp where
   traverse _ (Lit i) = pure (Lit i)
   traverse f (Op op e) = Op op <$> traverse f e
   traverse f (Op2 op2 e1 e2) = Op2 op2 <$> traverse f e1 <*> traverse f e2
   traverse f (Var x es) = Var <$> f x <*> traverse (traverse f) es
 
-instance Foldable Exp where
-  foldMap = foldMapDefault
+instance Functor  Exp where fmap = fmapDefault
+instance Foldable Exp where foldMap = foldMapDefault
 
 boolOp :: (Bool -> Bool) -> Integer -> Integer
 boolOp op x = if op (x /= 0) then 1 else 0
@@ -145,6 +152,15 @@ data Cond var
    = CondExp (Exp var)
    | PrivCond Rel2 (var, [Exp var]) (Exp var)
   deriving (Show)
+
+instance Traversable Cond where
+  traverse f (CondExp e) = CondExp <$> traverse f e
+  traverse f (PrivCond rel2 (v,es) e)
+    = PrivCond rel2 <$> ((,) <$> f v <*> traverse (traverse f) es)
+                    <*> traverse f e
+
+instance Functor  Cond where fmap = fmapDefault
+instance Foldable Cond where foldMap = foldMapDefault
 
 evalRel2 :: Rel2 -> Integer -> Integer -> Bool
 evalRel2 LE = (<=)
@@ -229,10 +245,36 @@ data Stm var = While (Exp var) [Stm var]
              | Return
   deriving (Show)
 
+instance Traversable Stm where
+  traverse f (While e s) = While <$> traverse f e
+                                 <*> traverse (traverse f) s
+  traverse f (For v1 v2 s) = For <$> f v1
+                                 <*> f v2
+                                 <*> traverse (traverse f) s
+  traverse f (If e s1 s2) = If <$> traverse f e
+                               <*> traverse (traverse f) s1
+                               <*> traverse (traverse f) s2
+  traverse f (Assign (v, es) e)
+    = Assign <$> ((,) <$> f v <*> traverse (traverse f) es)
+             <*> traverse f e
+  traverse f (Random (v, es) e)
+    = Random <$> ((,) <$> f v <*> traverse (traverse f) es)
+             <*> traverse f e
+
+instance Functor  Stm where fmap = fmapDefault
+instance Foldable Stm where foldMap = foldMapDefault
+
 data RandExp var
   = RandomBit Double
   | RandomInt (Range (Exp var))
   deriving (Show)
+
+instance Traversable RandExp where
+  traverse _ (RandomBit d) = pure (RandomBit d)
+  traverse f (RandomInt r) = RandomInt <$> traverse (traverse f) r
+
+instance Functor  RandExp where fmap = fmapDefault
+instance Foldable RandExp where foldMap = foldMapDefault
 
 type Probability = Rational
 
@@ -277,8 +319,7 @@ mapBinTree :: (n -> n') -> (a -> a') -> BinTree n a -> BinTree n' a'
 mapBinTree f g (Fork x l r) = Fork (f x) (mapBinTree f g l) (mapBinTree f g r)
 mapBinTree _ g (Leaf x) = Leaf (g x)
 
-instance Functor (BinTree n) where
-  fmap = liftM
+instance Functor (BinTree n) where fmap = liftM
 
 {-
 instance Applicative (BinTree n) where
@@ -315,8 +356,7 @@ instance Monad m => Monad (ProbT m) where
   Bind m k'      >>= k = Bind m (\x -> k' x >>= k)
   Ret x          >>= k = k x
 
-instance Monad m => Functor (ProbT m) where
-  fmap = liftM
+instance Monad m => Functor (ProbT m) where fmap = liftM
 
 instance Monad m => MonadProb (ProbT m) where
   withProb p left right = WithProb p left right
@@ -445,10 +485,26 @@ data Initializer a =
  | Init a
  | IntervalInit (Interval a)
 
+instance Traversable Initializer where
+  traverse _ NoInit = pure NoInit
+  traverse f (Init x) = Init <$> f x
+  traverse f (IntervalInit i) = IntervalInit <$> traverse (traverse f) i
+
+instance Functor  Initializer where fmap = fmapDefault
+instance Foldable Initializer where foldMap = foldMapDefault
+
 data Decl var
   = Decl Mode (Type (Exp var)) var (Initializer (Exp var)) -- e.g. secret x : int 3;
   | Cnst var Integer                                       -- const x := 2;
   | Code (Stm var)
+
+instance Traversable Decl where
+  traverse f (Decl m ty v ini) = Decl m <$> traverse (traverse f) ty <*> f v <*> traverse (traverse f) ini
+  traverse f (Cnst v i) = Cnst <$> f v <*> pure i
+  traverse f (Code s) = Code <$> traverse f s
+
+instance Functor  Decl where fmap = fmapDefault
+instance Foldable Decl where foldMap = foldMapDefault
 
 execInit :: Exec var m => var -> Initializer (Exp var) -> m ()
 execInit _ NoInit            = return ()
@@ -487,10 +543,6 @@ dimensionOfType TyInt{}         = []
 enumIxs :: [Integer] -> [[Integer]]
 enumIxs (sz : szs) = [ (i:ixs) | ixs <- enumIxs szs, i <- [0..sz-1] ]
 enumIxs []         = [[]]
-
-instance Functor Type where
-  fmap _ (TyInt i)       = TyInt i
-  fmap f (TyArray sz ty) = TyArray (f sz) (fmap f ty)
 
 initVarDim :: Ord var => EvalEnv var -> Program var -> Map var [Integer]
 initVarDim env ds = Map.fromList
