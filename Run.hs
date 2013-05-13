@@ -33,6 +33,9 @@ precision s = Precision (read s)
 printVersion :: IO ()
 printVersion = putStrLn "hasQuail 2.35"
 
+approxCReal :: Int -> CReal -> CReal
+approxCReal pr = read . showCReal pr
+
 main :: IO ()
 main = do
   args <- getArgs
@@ -52,12 +55,13 @@ main = do
               let st = transProgr $ t
               let (leak , totSecret) = expected st
               let totSec = logBase 2 (fromInteger totSecret) 
+              let leak' = approxCReal pr leak
               -- putStrLn . showProbTree . runProgram $ st
               -- putStrLn $ "bits leaked: " ++ show (expected st :: Double)
-              putStrLn $ "bits leaked: " ++ showCReal pr leak
+              putStrLn $ "bits leaked: " ++ showCReal pr leak'
               putStrLn $ "total size of secret: " ++ showCReal pr totSec
                                                   ++ " ("
-                                                  ++ showCReal pr (100 * leak / totSec)
+                                                  ++ showCReal pr (100 * leak' / totSec)
                                                   ++ "%)"
     (_ , _ , errs) ->  ioError (userError (concat errs ++ usageInfo header options))
  where header = "Usage: Run [OPTION...] file..."
