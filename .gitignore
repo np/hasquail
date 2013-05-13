@@ -12,9 +12,9 @@ ErrM.hs
 Lexer.hs
 Lexquail.hs
 Lexquail.x
-Lexquail.i
 Parquail.hs
 Parquail.y
+Parquail.i
 Printquail.hs
 Skelquail.hs
 Testquail.hs
