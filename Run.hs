@@ -36,6 +36,11 @@ printVersion = putStrLn "hasQuail 2.35"
 approxCReal :: Int -> CReal -> CReal
 approxCReal pr = read . showCReal pr
 
+-- Here one can statically pick the precision for integers
+type IntPrec = Int
+-- type IntPrec = Int64
+-- type IntPrec = Integer
+
 main :: IO ()
 main = do
   args <- getArgs
@@ -54,7 +59,7 @@ main = do
               when (v > 0) $ putStrLn $ printTree t
               let st = transProgr $ t
               let (leak , totSecret) = expected st
-              let totSec = logBase 2 (fromInteger totSecret) 
+              let totSec = logBase 2 (fromIntegral (totSecret :: IntPrec))
               let leak' = approxCReal pr leak
               -- putStrLn . showProbTree . runProgram $ st
               -- putStrLn $ "bits leaked: " ++ show (expected st :: Double)
