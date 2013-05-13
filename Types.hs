@@ -430,7 +430,7 @@ withProbs r@(Range i j) f
     | otherwise = withProb ((m - i) % lengthRange r)
                     (withProbs (Range i m) f)
                     (withProbs (Range (m+1) j) f)
-       where 
+       where
          m = (i + j) `div` 2
 -}
     | otherwise = withProb (1 / fromIntegral (lengthRange r))
@@ -600,7 +600,7 @@ secretPrivInterval _ ty  (IntervalInit i) = lengthInterval i ^ product (dimensio
 secretBits :: (Show n, Integral n, Show var, Ord var) => EvalEnv n var -> Program var -> n
 secretBits cstEnv ds
   = sum [ secretPrivInterval cstEnv ty i
-  | Decl Secret ty' _ i' <- ds 
+  | Decl Secret ty' _ i' <- ds
   , let i = evalInitializer cstEnv i'
   , let ty = fmap (evalExp cstEnv) ty'
   ]
@@ -651,8 +651,7 @@ runProgram cstEnv prg
                . (>> get)
                . execProgram
                $ prg
-  where 
-        initialState = PrgState Map.empty (initPrivEnv cstEnv prg)
+  where initialState = PrgState Map.empty (initPrivEnv cstEnv prg)
 
 -- Assumption, input lists are strictly increasing
 -- therefore output will also be
@@ -679,13 +678,13 @@ collect (Fork p ls rs) = [ (p  * i , a) | (i , a) <- collect ls]
 
 {-# INLINE entropy #-}
 entropy :: Floating c => [Rational] -> c
-entropy xs 
+entropy xs
   -- = - logBase 2 (product [p ** p | (p' , _) <- xs, let p = fromRational p'])
   = - sum [ p * logBase 2 p | p' <- xs , let p = fromRational p']
 
 {-# INLINE mergeBy #-}
-mergeBy :: Num n => (a -> a -> Ordering) -> [(n , a)] -> [n] 
-mergeBy cmp = map (sum . map fst) 
+mergeBy :: Num n => (a -> a -> Ordering) -> [(n , a)] -> [n]
+mergeBy cmp = map (sum . map fst)
             . groupBy (((P.EQ ==) .) . cmp `on` snd)
             . sortBy (cmp `on` snd)
 
