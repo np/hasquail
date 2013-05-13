@@ -350,17 +350,16 @@ data ProbT (m :: * -> *) a where
     Bind      :: m b -> (b -> ProbT m a) -> ProbT m a
     Ret       :: a -> ProbT m a
 
-runProbT :: (MonadState s m, MonadProb n) => (s -> a -> b) -> ProbT m a -> m (n b)
-runProbT f (WithProb p ifTrue ifFalse) =
+runProbT :: (MonadState s m, MonadProb n) => ProbT m a -> m (n a)
+runProbT (WithProb p ifTrue ifFalse) =
   do s <- get
-     ifTrue' <- runProbT f ifTrue
+     ifTrue' <- runProbT ifTrue
      put s
-     ifFalse' <- runProbT f ifFalse
+     ifFalse' <- runProbT ifFalse
      put $ error "should not happen, if it does you're doing it wrong..."
      return (withProb p ifTrue' ifFalse')
-runProbT f (Bind m k) = m >>= runProbT f . k
-runProbT f (Ret x) = do s <- get
-                        return (return (f s x))
+runProbT (Bind m k) = m >>= runProbT . k
+runProbT (Ret x) = return (return x)
 
 instance MonadTrans ProbT where
     lift m = Bind m Ret
@@ -646,9 +645,10 @@ initialEnv cstEnv prg = PrgEnv isPriv varDim
 runProgram :: (Show n, Integral n, Show var, Ord var) => EvalEnv n var -> Program var -> ProbTree (PrgState n var)
 runProgram cstEnv prg
                = flip evalState initialState
-               . runProbT const
+               . runProbT
                . flip runReaderT (initialEnv cstEnv prg)
                . runM
+               . (>> get)
                . execProgram
                $ prg
   where 
