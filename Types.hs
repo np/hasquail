@@ -437,7 +437,7 @@ withProbs r@(Range i j) f
     | otherwise = withProb (1 / fromIntegral (lengthRange r))
                            (f i)
                            (withProbs (Range (i+1) j) f)
--- -}
+
 execStm :: Exec n var m => Stm var -> m ()
 execStm e = execStm' e {-do s <- get
                 trace ("execStm=" ++ show e ++ " mem=" ++ showPrgState s) (execStm' e)-}
