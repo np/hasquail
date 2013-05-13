@@ -40,9 +40,11 @@ instance Functor  Range where fmap = fmapDefault
 instance Foldable Range where foldMap = foldMapDefault
 
 -- lengthRange (Range i i) = i - i + 1 = 1
+{-# INLINE lengthRange #-}
 lengthRange :: Num a => Range a -> a
 lengthRange (Range i j) = j - i + 1
 
+{-# INLINE wellFormedRange #-}
 wellFormedRange :: Ord a => Range a -> Bool
 wellFormedRange (Range i j) = i <= j
 
@@ -54,16 +56,20 @@ wellFormedInterval [r] = wellFormedRange r
 wellFormedInterval (r1@(Range _ j) : r2@(Range k _) : rs)
   = k > j && wellFormedRange r1 && wellFormedInterval (r2 : rs)
 
+{-# INLINE validate #-}
 validate :: String -> (a -> Bool) -> a -> a
 validate msg p x | p x       = x
                  | otherwise = error $ "validate: " ++ msg
 
+{-# INLINE validateInterval #-}
 validateInterval :: Ord a => Interval a -> Interval a
 validateInterval = validate "wellFormedInterval" wellFormedInterval
 
+{-# INLINE lengthInterval #-}
 lengthInterval :: Num a => Interval a -> a
 lengthInterval = sum . map lengthRange
 
+{-# INLINE singletonInterval #-}
 singletonInterval :: a -> Interval a
 singletonInterval x = [Range x x]
 
@@ -112,9 +118,11 @@ instance Traversable Exp where
 instance Functor  Exp where fmap = fmapDefault
 instance Foldable Exp where foldMap = foldMapDefault
 
+{-# INLINE lit #-}
 lit :: Integral n => n -> Exp var
 lit = Lit . toInteger
 
+{-# INLINE boolOp #-}
 boolOp :: (Eq n, Num n) => (Bool -> Bool) -> n -> n
 boolOp op x = if op (x /= 0) then 1 else 0
 
@@ -122,6 +130,7 @@ evalOp :: (Enum n, Eq n, Num n) => Op -> n -> n
 evalOp Not = boolOp not
 evalOp Fac = \n -> product [1..n]
 
+{-# INLINE boolOp2 #-}
 boolOp2 :: (Eq n, Num n) => (Bool -> Bool -> Bool) -> n -> n -> n
 boolOp2 op2 x y = if op2 (x /= 0) (y /= 0) then 1 else 0
 
@@ -182,27 +191,34 @@ data CompResult n var
   | BoolComp Bool
   deriving (Show)
 
+{-# INLINE flipIntervalComp #-}
 flipIntervalComp :: IntervalComp a -> IntervalComp a
 flipIntervalComp (IntervalComp x y) = IntervalComp y x
 
+{-# INLINE range #-}
 range :: Ord a => a -> a -> Interval a
 range i j | i > j     = []
           | otherwise = [Range i j]
 
+{-# INLINE splitInterval #-}
 splitInterval :: (Ord a, Num a) => Interval a -> a -> IntervalComp a
 splitInterval rs k = IntervalComp [ r' | Range i _j <- rs, r' <- range i (k-1) ]
                                   [ r' | Range _i j <- rs, r' <- range k j     ]
 
+{-# INLINE removeRange #-}
 removeRange :: (Ord a, Num a) => Range a -> a -> Interval a
 removeRange r@(Range i j) k | not (k `memberRange` r) = [r]
                             | otherwise               = range i (k-1) ++ range (k+1) j
 
+{-# INLINE removeInterval #-}
 removeInterval :: (Ord a, Num a) => Interval a -> a -> Interval a
 removeInterval rs k = [ r' | r <- rs, r' <- removeRange r k ]
 
+{-# INLINE memberRange #-}
 memberRange :: Ord a => a -> Range a -> Bool
 memberRange k (Range i j) = k >= i && k <= j
 
+{-# INLINE memberInterval #-}
 memberInterval :: Ord a => a -> Interval a -> Bool
 k `memberInterval` rs = any (memberRange k) rs
 
@@ -270,6 +286,7 @@ instance Foldable RandExp where foldMap = foldMapDefault
 
 type Probability = Rational
 
+{-# INLINE probIf #-}
 probIf :: Integral n => Interval n -> Interval n -> Probability
 probIf rs1 rs2 = fromIntegral (lengthInterval rs1) / fromIntegral (lengthInterval rs1 + lengthInterval rs2)
 
@@ -285,15 +302,19 @@ class (MonadProb m,
        Ord var)
       => Exec n var m where
 
+{-# INLINE getEnv #-}
 getEnv :: Exec n var m => m (EvalEnv n var)
 getEnv = gets (\s v xs -> fromMaybe (error ("no such public variable: " ++ show (v,xs))) (Map.lookup (v, xs) (publicState s)))
 
+{-# INLINE getPrivEnv #-}
 getPrivEnv :: Exec n var m => m (EvalPrivEnv n var)
 getPrivEnv = gets (\s v xs -> fromMaybe (error ("no such private variable: " ++ show (v,xs))) (Map.lookup (v, xs) (privateState s)))
 
+{-# INLINE addEnv #-}
 addEnv :: Exec n var m => (var, [n]) -> n -> m ()
 addEnv vxs i = modify (\s -> s { publicState = Map.insert vxs i (publicState s) })
 
+{-# INLINE addPrivEnv #-}
 addPrivEnv :: Exec n var m => (var, [n]) -> Interval n -> m ()
 addPrivEnv vxs i = modify (\s -> s { privateState = Map.insert vxs i (privateState s) })
 
@@ -388,11 +409,13 @@ newtype M n var a = M { runM :: ReaderT (PrgEnv n var)
 
 instance (Ord var, Show var, Show n, Integral n) => Exec n var (M n var) where
 
+{-# INLINE viewCond #-}
 viewCond :: (var -> Bool) -> Exp var -> Cond var
 viewCond isPriv (Op2 (Rel2 rel2) (Var v es) e2)
   | isPriv v = PrivCond rel2 (v, es) e2
 viewCond _ e = CondExp e
 
+{-# INLINE withProbIf #-}
 withProbIf :: (Integral n, MonadProb m) => Interval n -> Interval n -> m a -> m a -> m a
 withProbIf []    []     _      _       = error "impossible IntervalComp [] []"
 withProbIf []    _      _      ifFalse = ifFalse
@@ -457,6 +480,7 @@ execStm' (For v arr body) =
 
 execStm' Return = return ()
 
+{-# INLINE execStms #-}
 execStms :: Exec n var m => [Stm var] -> m ()
 execStms = mapM_ execStm
 
@@ -467,6 +491,8 @@ data Mode = Constant
           | Private
   deriving (Eq)
 
+{-# INLINE isPublicMode #-}
+{-# INLINE isPrivateMode #-}
 isPublicMode, isPrivateMode :: Mode -> Bool
 isPublicMode Constant = True
 isPublicMode Observable = True
@@ -515,9 +541,11 @@ execDecl (Code s)         = execStm s
 
 type Program var = [Decl var]
 
+{-# INLINE execProgram #-}
 execProgram :: Exec n var m => Program var -> m ()
 execProgram = mapM_ execDecl
 
+{-# INLINE vars #-}
 vars :: Ord var => (Mode -> Bool) -> Program var -> Set var
 vars p ds = Set.fromList [v | Decl m _ v _ <- ds, p m]
 
@@ -541,11 +569,13 @@ initVarDim env ds = Map.fromList
                    ]
 
 -- EvalEnv is not yet used
+{-# INLINE initPrivInterval #-}
 initPrivInterval :: (Ord n, Num n) => EvalEnv ix var -> Type n -> Initializer n -> Interval n
 initPrivInterval   _ ty NoInit           = intervalOfType ty
 initPrivInterval   _ _  (Init _)         = error "initPrivInterval"
 initPrivInterval   _ _  (IntervalInit i) = i
 
+{-# INLINE initPrivEnv #-}
 initPrivEnv :: (Integral n, Ord var) => EvalEnv n var -> Program var -> Map (var,[n]) (Interval n)
 initPrivEnv env ds = Map.fromList $
                    [ ((v,xs),initPrivInterval env ty' ini')
@@ -561,11 +591,13 @@ secretOfType (TyInt bits)   = 2^bits
 secretOfType (TyArray s ty) = secretOfType ty ^ s
 
 -- EvalEnv is not yet used
+{-# INLINE secretPrivInterval #-}
 secretPrivInterval :: Integral n => EvalEnv ix var -> Type n -> Initializer n -> n
 secretPrivInterval _ ty NoInit           = secretOfType ty
 secretPrivInterval _ _  (Init _)         = error "initPrivInterval"
 secretPrivInterval _ ty  (IntervalInit i) = lengthInterval i ^ product (dimensionOfType ty)
 
+{-# INLINE secretBits #-}
 secretBits :: (Show n, Integral n, Show var, Ord var) => PrgState n var -> Program var -> n
 secretBits st ds
   = sum [ secretPrivInterval env ty i
@@ -600,9 +632,11 @@ showInterval = concatMap showRange
 showRange :: Show a => Range a -> String
 showRange (Range i j) = "[" ++ show i ++ ".." ++ show j ++ "]"
 
+{-# INLINE programConstants #-}
 programConstants :: (Num n, Ord var) => Program var -> Map var n
 programConstants ds = Map.fromList [ (v,fromInteger n) | Cnst v n <- ds ]
 
+{-# INLINE initialEnv #-}
 initialEnv :: (Integral n, Ord var) => EvalEnv n var -> Program var -> PrgEnv n var
 initialEnv cstEnv prg = PrgEnv isPriv varDim
   where
@@ -610,6 +644,7 @@ initialEnv cstEnv prg = PrgEnv isPriv varDim
     isPriv = (`Set.member` privVars)
     varDim = fromMaybe (error "not an array") . flip Map.lookup (initVarDim cstEnv prg)
 
+{-# INLINE runProgram #-}
 runProgram :: (Show n, Integral n, Show var, Ord var) => Program var -> (ProbTree (PrgState n var), PrgState n var)
 runProgram prg = flip runState initialState
                . runProbT const
@@ -645,11 +680,13 @@ collect (Fork p ls rs) = [ (p  * i , a) | (i , a) <- collect ls]
   where
     p' = 1 - p
 
+{-# INLINE entropy #-}
 entropy :: Floating c => [Rational] -> c
 entropy xs 
   -- = - logBase 2 (product [p ** p | (p' , _) <- xs, let p = fromRational p'])
   = - sum [ p * logBase 2 p | p' <- xs , let p = fromRational p']
 
+{-# INLINE mergeBy #-}
 mergeBy :: Num n => (a -> a -> Ordering) -> [(n , a)] -> [n] 
 mergeBy cmp = map (sum . map fst) 
             . groupBy (((P.EQ ==) .) . cmp `on` snd)
@@ -663,6 +700,7 @@ matchVar pa pb = PrgState
   }
 -}
 
+{-# INLINE expected #-}
 expected :: (Show n, Integral n, Show var, Ord var, Show c , Floating c) => Program var -> (c , n)
 expected prg = (t "o" o + t "s" s - t "os" os , secretBits prgstate prg)
   where
