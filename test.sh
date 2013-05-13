@@ -6,5 +6,5 @@ happy Parquail.y
 ghc --make -O2  -Wall -fno-warn-name-shadowing Run.hs -rtsopts
 for i; do
   echo "$i"
-  ./Run "$i"
+  time ./Run "$i"
 done
