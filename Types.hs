@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, KindSignatures, MultiParamTypeClasses, GeneralizedNewtypeDeriving, FlexibleInstances, UndecidableInstances, FlexibleContexts #-}
+{-# LANGUAGE GADTs, KindSignatures, MultiParamTypeClasses, GeneralizedNewtypeDeriving, FlexibleInstances, UndecidableInstances, FlexibleContexts, ScopedTypeVariables #-}
 module Types where
 
 
@@ -356,7 +356,7 @@ runProbT f (WithProb p ifTrue ifFalse) =
      ifTrue' <- runProbT f ifTrue
      put s
      ifFalse' <- runProbT f ifFalse
-     put $ s -- error "should not happen" -- I'm happening, beleive me
+     put $ error "should not happen, if it does you're doing it wrong..."
      return (withProb p ifTrue' ifFalse')
 runProbT f (Bind m k) = m >>= runProbT f . k
 runProbT f (Ret x) = do s <- get
@@ -598,15 +598,13 @@ secretPrivInterval _ _  (Init _)         = error "initPrivInterval"
 secretPrivInterval _ ty  (IntervalInit i) = lengthInterval i ^ product (dimensionOfType ty)
 
 {-# INLINE secretBits #-}
-secretBits :: (Show n, Integral n, Show var, Ord var) => PrgState n var -> Program var -> n
-secretBits st ds
-  = sum [ secretPrivInterval env ty i
+secretBits :: (Show n, Integral n, Show var, Ord var) => EvalEnv n var -> Program var -> n
+secretBits cstEnv ds
+  = sum [ secretPrivInterval cstEnv ty i
   | Decl Secret ty' _ i' <- ds 
-  , let i = evalInitializer env i'
-  , let ty = fmap (evalExp env) ty'
+  , let i = evalInitializer cstEnv i'
+  , let ty = fmap (evalExp cstEnv) ty'
   ]
-  where env v xs = fromMaybe (error ("no such public variable: " ++ show (v,xs))) $ Map.lookup (v, xs) (publicState st)
-  
 
 showProbTree :: (Show n, Show var) => ProbTree (PrgState n var) -> String
 showProbTree = show . mapBinTree (($"") . showDouble . fromRational) showPrgState
@@ -645,16 +643,15 @@ initialEnv cstEnv prg = PrgEnv isPriv varDim
     varDim = fromMaybe (error "not an array") . flip Map.lookup (initVarDim cstEnv prg)
 
 {-# INLINE runProgram #-}
-runProgram :: (Show n, Integral n, Show var, Ord var) => Program var -> (ProbTree (PrgState n var), PrgState n var)
-runProgram prg = flip runState initialState
+runProgram :: (Show n, Integral n, Show var, Ord var) => EvalEnv n var -> Program var -> ProbTree (PrgState n var)
+runProgram cstEnv prg
+               = flip evalState initialState
                . runProbT const
                . flip runReaderT (initialEnv cstEnv prg)
                . runM
                . execProgram
                $ prg
   where 
-        cstEnv v [] = fromMaybe (error "not a constant") (Map.lookup v (programConstants prg))
-        cstEnv _ _  = error "unexpected constant array"
         initialState = PrgState Map.empty (initPrivEnv cstEnv prg)
 
 -- Assumption, input lists are strictly increasing
@@ -701,20 +698,21 @@ matchVar pa pb = PrgState
 -}
 
 {-# INLINE expected #-}
-expected :: (Show n, Integral n, Show var, Ord var, Show c , Floating c) => Program var -> (c , n)
-expected prg = (t "o" o + t "s" s - t "os" os , secretBits prgstate prg)
+expected :: forall n var c. (Show n, Integral n, Show var, Ord var, Num c, Show c , Floating c) => Program var -> (c , n)
+expected prg = (t "o" o + t "s" s - t "os" os , secretBits cstEnv prg)
   where
-    t _nm cmp = let x = entropy (mergeBy cmp st)
+    t :: forall b. Ord b => String -> (PrgState n var -> b) -> c
+    t _nm f = let x = entropy (mergeBy (compare `on` f) st)
                in x -- trace ("entropy of " ++ _nm ++ " is " ++ show x) x
-    (st', prgstate) = runProgram prg
+    cstEnv v [] = fromMaybe (error "not a constant") (Map.lookup v (programConstants prg))
+    cstEnv _ _  = error "unexpected constant array"
+    st' = runProgram cstEnv prg
     st = collect st'
     oV = vars (== Observable) prg
     sV = vars (== Secret)     prg
-    oS = filter (\((k,_),_) -> k `Set.member` oV) . Map.toList . publicState 
-    sS = filter (\((k,_),_) -> k `Set.member` sV) . Map.toList . privateState
-    o  = compare `on` oS
-    s  = compare `on` sS
-    os = compare `on` (oS &&& sS)
+    o  = filter (\((k,_),_) -> k `Set.member` oV) . Map.toList . publicState
+    s  = filter (\((k,_),_) -> k `Set.member` sV) . Map.toList . privateState
+    os = o &&& s
 
 -- -}
 -- -}
