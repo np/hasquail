@@ -11,7 +11,7 @@ import Data.Function (on)
 import Data.Set (Set)
 import Data.List
 import Data.Maybe
-import Data.Ratio ((%))
+-- import Data.Ratio ((%))
 import Control.Arrow ((&&&))
 import Control.Monad.Reader
 import Control.Monad.State
@@ -272,7 +272,7 @@ runProbT f (WithProb p ifTrue ifFalse) =
      ifTrue' <- runProbT f ifTrue
      put s
      ifFalse' <- runProbT f ifFalse
-     put $ error "should not happen"
+     put $ s -- error "should not happen" -- I'm happening, beleive me
      return (withProb p ifTrue' ifFalse')
 runProbT f (Bind m k) = m >>= runProbT f . k
 runProbT f (Ret x) = do s <- get
@@ -346,6 +346,7 @@ withProbs r@(Range i j) f
     | otherwise = withProb (1 / fromInteger (lengthRange r))
                            (f i)
                            (withProbs (Range (i+1) j) f)
+-- -}
 execStmt :: Exec m => Stmt -> m ()
 execStmt e = execStmt' e {-do s <- get
                 trace ("execStmt=" ++ show e ++ " mem=" ++ showPrgState s) (execStmt' e)-}
@@ -478,6 +479,25 @@ initPrivEnv env ds = Map.fromList $
                    , xs <- enumIxs . dimensionOfType $ ty'
                    ]
 
+secretOfType :: Type Integer -> Integer
+secretOfType (TyInt bits)   = 2^bits
+secretOfType (TyArray s ty) = secretOfType ty ^ s
+
+secretPrivInterval :: EvalEnv -> Type Integer -> Initializer Integer -> Integer
+secretPrivInterval env ty NoInit           = secretOfType ty
+secretPrivInterval env _  (Init _)         = error "initPrivInterval"
+secretPrivInterval env ty  (IntervalInit i) = lengthInterval i ^ product (dimensionOfType ty)
+
+secretBits :: PrgState -> Program -> Integer
+secretBits st ds 
+  = sum [ secretPrivInterval env ty i
+  | Decl Secret ty' _ i' <- ds 
+  , let i = evalInitializer env i'
+  , let ty = fmap (evalExpr env) ty'
+  ]
+  where env v xs = fromMaybe (error ("no such public variable: " ++ show (v,xs))) $ Map.lookup (v, xs) (publicState st)
+  
+
 showProbTree :: ProbTree PrgState -> String
 showProbTree = show . mapBinTree (($"") . showDouble . fromRational) showPrgState
   where showDouble :: Double -> ShowS
@@ -505,18 +525,24 @@ showRange (Range i j) = "[" ++ show i ++ ".." ++ show j ++ "]"
 programConstants :: Program -> Map Var Integer
 programConstants ds = Map.fromList [ (v,n) | Cnst v n <- ds ]
 
-runProgram :: Program -> ProbTree PrgState
-runProgram prg = flip evalState initialState
+initialEnv :: Program -> PrgEnv
+initialEnv prg = PrgEnv isPriv
+                            (fromMaybe (error "not an array") . flip Map.lookup (initVarDim cstEnv prg))
+  where
+    cstEnv v [] = fromMaybe (error "not a constant") (Map.lookup v (programConstants prg))
+    cstEnv v _  = error "unexpected constant array"
+    isPriv = (`Set.member` privVars prg)
+
+runProgram :: Program -> (ProbTree PrgState , PrgState)
+runProgram prg = flip runState initialState
                . runProbT const
-               . flip runReaderT initialEnv
+               . flip runReaderT (initialEnv prg)
                . runM
                . execProgram
                $ prg
-  where isPriv = (`Set.member` privVars prg)
+  where 
         cstEnv v [] = fromMaybe (error "not a constant") (Map.lookup v (programConstants prg))
         cstEnv v _  = error "unexpected constant array"
-        initialEnv = PrgEnv isPriv
-                            (fromMaybe (error "not an array") . flip Map.lookup (initVarDim cstEnv prg))
         initialState = PrgState Map.empty (initPrivEnv cstEnv prg)
 
 -- Assumption, input lists are strictly increasing
@@ -535,36 +561,45 @@ xs@((px , x) : xs') <++> ys@((py, y) : ys') = case compare x y of
   P.EQ -> trace "equated" $ (px + py , x) : xs' <++> ys'
   P.GT -> (py , y) : xs <++> ys'
 
-
-collect :: (Fractional c, Ord a) => ProbTree a -> [(c , a)]
+collect :: (Ord a) => ProbTree a -> [(Rational , a)]
 collect (Leaf x) = [(1 , x)]
-collect (Fork p ls rs) = [ (pc * i , a) | (i , a) <- collect ls]
+collect (Fork p ls rs) = [ (p  * i , a) | (i , a) <- collect ls]
                     <++> [ (p' * i , a) | (i , a) <- collect rs]
   where
-    pc = fromRational p 
-    p' = 1 - pc
+    p' = 1 - p
 
-entropy :: Floating c => [(c , a)] -> c
-entropy xs = - sum [ p * logBase 2 p | (p , _) <- xs]
+entropy :: Floating c => [Rational] -> c
+entropy xs 
+  -- = - logBase 2 (product [p ** p | (p' , _) <- xs, let p = fromRational p'])
+  = - sum [ p * logBase 2 p | p' <- xs , let p = fromRational p']
 
-mergeBy :: Num n => (a -> a -> Ordering) -> [(n , a)] -> [(n , a)] 
-mergeBy compare = map (sum . map fst &&& snd . head) 
-                . groupBy (((P.EQ ==) .) . compare `on` snd)
-                . sortBy (compare `on` snd)
+mergeBy :: Num n => (a -> a -> Ordering) -> [(n , a)] -> [n] 
+mergeBy cmp = map (sum . map fst) 
+            . groupBy (((P.EQ ==) .) . cmp `on` snd)
+            . sortBy (cmp `on` snd)
 
-expected :: Floating c => Program -> c
-expected prg = t "o" eo + t "s" es - t "os" eos
+{-
+matchVar :: PrgState -> PrgState -> PrgState
+matchVar pa pb = PrgState
+  { publicState  = Map.unionWithKey const (publicState pa) (Map.mapWithKey (\ _ _ -> 0) (publicState  pb))
+  , privateState = Map.unionWithKey const (publicState pa) (Map.mapWithKey (\ _ _ -> 0) (privateState pb))
+  }
+-}
+
+expected :: (Show c , Floating c) => Program -> (c , Integer)
+expected prg = (t "o" o + t "s" s - t "os" os , secretBits prgstate prg)
   where
-    t s x = x -- trace ("entropy of " ++ s ++ " is " ++ show x) x
-    st = collect (runProgram prg)
-    oS = filter (\((k,_),_) -> k `Set.member` obsVars prg) . Map.toList . publicState 
-    sS = filter (\((k,_),_) -> k `Set.member` secVars prg) . Map.toList . privateState
+    t s cmp = let x = entropy (mergeBy cmp st)
+               in x -- trace ("entropy of " ++ s ++ " is " ++ show x) x
+    (st', prgstate) = runProgram prg
+    st = collect st'
+    oV = obsVars prg
+    sV = secVars prg
+    oS = filter (\((k,_),_) -> k `Set.member` oV) . Map.toList . publicState 
+    sS = filter (\((k,_),_) -> k `Set.member` sV) . Map.toList . privateState
     o  = compare `on` oS
     s  = compare `on` sS
     os = compare `on` (oS &&& sS)
-    eo = entropy (mergeBy o  st) 
-    es = entropy (mergeBy s  st)
-    eos = entropy (mergeBy os st)
 
 -- Check ranges in declarations
 --type TypingEnv = Map Var (Mode , Type)
