@@ -5,6 +5,7 @@ module TranslateQuail where
 import Prelude hiding (exp, id)
 import Absquail
 import qualified Types as T
+import qualified Interval as T
 {-
 import ErrM
 type Result = Err String
