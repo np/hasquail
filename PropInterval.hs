@@ -48,6 +48,17 @@ prop_splitIntervalMember i k k' = not (null (wf i)) ==> not (x `memberInterval` 
 prop_splitIntervalNotMember i x = not (x `memberInterval` wf i) ==> not (x `memberInterval` a || x `memberInterval` b)
   where IntervalComp a b = splitInterval (wf i) x
 
+splitIntervalTwice :: (Num a , Ord a) => Interval a -> a -> a -> (Interval a , Interval a , Interval a , Interval a)
+splitIntervalTwice i x y = (aa , ab , ba , bb)
+  where IntervalComp a b = splitInterval i x
+        IntervalComp aa ab = splitInterval a y
+        IntervalComp ba bb = splitInterval b y
+
+swapInner :: (a, b, c, d) -> (a, c, b, d)
+swapInner (a, b, c, d) = (a, c, b, d)
+
+prop_splitIntervalOrdInd i x y = splitIntervalTwice (wf i) x y == swapInner (splitIntervalTwice (wf i) y x)
+
 main = do
     putStrLn "running prop_WF" 
     qc (prop_WF :: WF -> Bool)
@@ -69,5 +80,7 @@ main = do
     qc (prop_splitIntervalMember :: WF -> Integer -> Integer -> Gen Prop)
     putStrLn "running prop_splitIntervalNotMember"
     qc (prop_splitIntervalNotMember :: WF -> Integer -> Gen Prop)
+    putStrLn "running prop_splitIntervalOrdInd"
+    qc (prop_splitIntervalOrdInd :: WF -> Integer -> Integer -> Bool)
   where 
     qc p = flip quickCheckWith p stdArgs { maxSuccess = 1000 }
