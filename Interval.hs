@@ -72,8 +72,8 @@ range i j | i > j     = []
 
 {-# INLINE splitInterval #-}
 splitInterval :: (Ord a, Num a) => Interval a -> a -> IntervalComp a
-splitInterval rs k = IntervalComp [ r' | Range i _j <- rs, r' <- range i (k-1) ]
-                                  [ r' | Range _i j <- rs, r' <- range k j     ]
+splitInterval rs k = IntervalComp [ r | Range i j <- rs, r <- range i (min (k-1) j) ]
+                                  [ r | Range i j <- rs, r <- range (max k i) j     ]
 
 {-# INLINE removeRange #-}
 removeRange :: (Ord a, Num a) => Range a -> a -> Interval a
