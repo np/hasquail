@@ -59,6 +59,16 @@ swapInner (a, b, c, d) = (a, c, b, d)
 
 prop_splitIntervalOrdInd i x y = splitIntervalTwice (wf i) x y == swapInner (splitIntervalTwice (wf i) y x)
 
+prop_splitInterval_coassoc (WF lmh) i j =
+  (i <= j) ==>
+  (let (IntervalComp l mh) = splitInterval lmh i in
+   let (IntervalComp m h)  = splitInterval  mh j in
+   (l,m,h))
+  ==
+  (let (IntervalComp lm h) = splitInterval lmh j in
+   let (IntervalComp  l m) = splitInterval  lm i in
+   (l,m,h))
+
 main = do
     putStrLn "running prop_WF" 
     qc (prop_WF :: WF -> Bool)
@@ -82,5 +92,7 @@ main = do
     qc (prop_splitIntervalNotMember :: WF -> Integer -> Gen Prop)
     putStrLn "running prop_splitIntervalOrdInd"
     qc (prop_splitIntervalOrdInd :: WF -> Integer -> Integer -> Bool)
+    putStrLn "running prop_splitInterval_coassoc"
+    qc (prop_splitInterval_coassoc :: WF -> Integer -> Integer -> Property)
   where 
     qc p = flip quickCheckWith p stdArgs { maxSuccess = 1000 }

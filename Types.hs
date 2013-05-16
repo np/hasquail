@@ -621,11 +621,13 @@ expected :: forall n var c. (Show n, Integral n, Show var, Ord var, Num c, Show 
 expected prg = (t "o" o + t "s" s - t "os" os , secretBits cstEnv prg)
   where
     t :: forall b. Ord b => String -> (PrgState n var -> b) -> c
-    t _nm f = let x = entropy (mergeBy (compare `on` f) st)
+    t _nm f = let xs = mergeBy (compare `on` f) st
+                  x = trace ("calculating entropy for " ++ _nm ++ " containing " ++ show (length xs) ++ " number of states") $ entropy xs
                in trace ("entropy of " ++ _nm ++ " is " ++ show x) x
     cstEnv v [] = fromMaybe (error "not a constant") (Map.lookup v (programConstants prg))
     cstEnv _ _  = error "unexpected constant array"
-    st = trace "running" $ collect $ runProgram cstEnv prg
+    st' = trace "running" $ collect $ runProgram cstEnv prg
+    st  = trace ("number of states is: " ++ show (length st')) st'
     o  = filterState Observable . publicState
     s  = filterState Secret     . privateState
     os = o &&& s
