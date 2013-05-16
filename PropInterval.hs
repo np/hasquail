@@ -31,6 +31,16 @@ prop_removeInterval x i = not (x `memberInterval` removeInterval i x)
 
 prop_removeIntervalWell i x = wellFormedInterval (removeInterval (wf i) x)
 
+prop_splitInterval_coassoc (WF lmh) i j =
+  (i <= j) ==>
+  (let (IntervalComp l mh) = splitInterval lmh i in
+   let (IntervalComp m h)  = splitInterval  mh j in
+   (l,m,h))
+  ==
+  (let (IntervalComp lm h) = splitInterval lmh j in
+   let (IntervalComp  l m) = splitInterval  lm i in
+   (l,m,h))
+
 main = do
     putStrLn "running prop_WF" 
     qc (prop_WF :: WF -> Bool)
@@ -44,5 +54,7 @@ main = do
     qc (prop_removeInterval :: Integer -> Interval Integer -> Bool)
     putStrLn "running prop_removeIntervalWell"
     qc (prop_removeIntervalWell :: WF -> Integer -> Bool)
+    putStrLn "running prop_splitInterval_coassoc"
+    qc (prop_splitInterval_coassoc :: WF -> Integer -> Integer -> Property)
   where 
     qc p = flip quickCheckWith p stdArgs { maxSuccess = 1000 }
