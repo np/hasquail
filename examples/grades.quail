@@ -1,10 +1,10 @@
 // the leakage for this protocol must be the same as the leakage for sum.quail for the same values of the constants.
 
 // S is the number of students
-const S:=2;
+const S:=4;
 
 // G is the number of grades (from 0 to G-1)
-const G:=5;
+const G:=4;
 
 // n is the number of possible random numbers generated
 public int32 n;

@@ -1,0 +1,24 @@
+public int32 x;
+public int32 y;
+public int32 z;
+observable int32 p;
+observable int32 g;
+observable int32 gpowx;
+observable int32 gpowy;
+observable int32 thirdvalue;
+secret int1 scenario;
+
+assign g := 2;
+assign p := 11;
+assign x := 3;
+assign y := 4;
+assign z := 5;
+
+assign gpowx := g ** x % p;
+assign gpowy := g ** y % p;
+
+if (scenario==0) then
+  assign thirdvalue := g ** (x*y) % p;
+else
+  assign thirdvalue := g ** z % p;
+fi
